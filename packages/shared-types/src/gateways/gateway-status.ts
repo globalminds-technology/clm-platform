@@ -1,0 +1,7 @@
+export enum GatewayStatus {
+  ONLINE = 'ONLINE',
+  OFFLINE = 'OFFLINE',
+  ENROLLING = 'ENROLLING',
+  DECOMMISSIONED = 'DECOMMISSIONED',
+}
+

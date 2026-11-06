@@ -14,6 +14,12 @@ Enterprise Certificate Lifecycle Management SaaS for AWS, Azure, and GCP Marketp
 * **Monorepo Engine:** pnpm + Turborepo
 * **AI Code Quality & Security:** CodeRabbit (`.coderabbit.yaml`)
 
+## Developer Guides & Documentation
+
+* **[DEVELOPER_2_GUIDE.md](DEVELOPER_2_GUIDE.md)**: Dedicated implementation guide for Developer 2 (Frontend, Portals & Design System).
+* **[DEVELOPMENT_SPLIT_PLAN.md](DEVELOPMENT_SPLIT_PLAN.md)**: Two-developer implementation split, architectural ownership, and integration checkpoints.
+* **[docs/architecture-guide.md](docs/architecture-guide.md)**: Clean architecture boundaries, security rules, and coding standards.
+
 ## Monorepo Layout
 
 ```text

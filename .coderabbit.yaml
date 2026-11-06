@@ -48,3 +48,4 @@ custom_prompt: |
      - No business logic in components or pages.
      - Never use `dangerouslySetInnerHTML` (certificate data is untrusted).
      - All server state must be managed via TanStack Query.
+

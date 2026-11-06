@@ -146,3 +146,4 @@ Page -> Hook -> API function (packages/api-client) -> HTTP client -> Backend
 - Tenant context set per transaction: `SET LOCAL app.tenant_id = '...'`.
 - Append-only audit log.
 - Customer cloud access uses AWS IAM Instance Roles / Workload Identity (no long-lived cloud keys stored in DB).
+

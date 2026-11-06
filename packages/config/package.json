@@ -1,0 +1,34 @@
+{
+  "name": "@clm/config",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared TypeScript, ESLint, and Prettier configurations for CLM Platform",
+  "main": "index.js",
+  "files": [
+    "tsconfig.base.json",
+    "tsconfig.node.json",
+    "tsconfig.react.json",
+    "tsconfig.package.json",
+    "prettier.config.js",
+    "eslint/**/*.js"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.node.json": "./tsconfig.node.json",
+    "./tsconfig.react.json": "./tsconfig.react.json",
+    "./tsconfig.package.json": "./tsconfig.package.json",
+    "./prettier": "./prettier.config.js",
+    "./eslint/base": "./eslint/base.js",
+    "./eslint/node": "./eslint/node.js",
+    "./eslint/react": "./eslint/react.js"
+  },
+  "dependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.25.0",
+    "@typescript-eslint/parser": "^8.25.0",
+    "eslint": "^9.21.0",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-plugin-react": "^7.37.4",
+    "eslint-plugin-react-hooks": "^5.1.0"
+  }
+}

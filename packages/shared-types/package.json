@@ -1,0 +1,28 @@
+{
+  "name": "@clm/shared-types",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Core domain models, enums, and interfaces shared across backend, gateways, and portals",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "clean": "rimraf dist"
+  },
+  "devDependencies": {
+    "@clm/config": "workspace:*",
+    "rimraf": "^6.0.0",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.0"
+  }
+}

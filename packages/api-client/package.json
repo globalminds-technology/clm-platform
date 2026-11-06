@@ -1,0 +1,32 @@
+{
+  "name": "@clm/api-client",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Typed HTTP API Client and mock provider for CLM Platform portals",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@clm/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@clm/config": "workspace:*",
+    "rimraf": "^6.0.0",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.0"
+  }
+}
+

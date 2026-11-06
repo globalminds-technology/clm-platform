@@ -1,0 +1,127 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { TenantContextService } from '../../shared/tenancy/tenant-context.service';
+import { TenantStatus, SubscriptionTier, Role, UserStatus, type Tenant } from '@clm/shared-types';
+import { type CreateTenantDto } from './dto/create-tenant.dto';
+import { type UpdateTenantDto } from './dto/update-tenant.dto';
+
+@Injectable()
+export class TenantsRepository {
+  private readonly logger = new Logger(TenantsRepository.name);
+
+  constructor(private readonly tenantContextService: TenantContextService) {}
+
+  async create(dto: CreateTenantDto, passwordHash: string): Promise<Tenant> {
+    return this.tenantContextService.withSystemContext(async client => {
+      // 1. Insert Tenant record
+      const tenantRes = await client.query(
+        `INSERT INTO tenants (
+          name, slug, status, tier, max_certificates, max_gateways, aws_account_id, aws_customer_identifier
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *;`,
+        [
+          dto.name,
+          dto.slug,
+          TenantStatus.ACTIVE,
+          dto.tier || SubscriptionTier.ENTERPRISE,
+          dto.maxCertificates || 50,
+          dto.maxGateways || 5,
+          dto.awsAccountId || null,
+          dto.awsCustomerIdentifier || null,
+        ],
+      );
+
+      const row = tenantRes.rows[0];
+
+      // 2. Provision Default Tenant Admin in users table
+      await client.query(
+        `INSERT INTO users (
+          tenant_id, email, password_hash, first_name, last_name, role, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7);`,
+        [
+          row.id,
+          dto.adminEmail,
+          passwordHash,
+          dto.adminFirstName,
+          dto.adminLastName,
+          Role.TENANT_ADMIN,
+          UserStatus.ACTIVE,
+        ],
+      );
+
+      this.logger.log(`Created new tenant '${dto.name}' (${row.id}) with admin '${dto.adminEmail}'`);
+      return this.mapRowToTenant(row);
+    });
+  }
+
+  async findAll(): Promise<Tenant[]> {
+    return this.tenantContextService.withSystemContext(async client => {
+      const res = await client.query('SELECT * FROM tenants ORDER BY created_at DESC;');
+      return res.rows.map(r => this.mapRowToTenant(r));
+    });
+  }
+
+  async findById(id: string): Promise<Tenant | null> {
+    return this.tenantContextService.withSystemContext(async client => {
+      const res = await client.query('SELECT * FROM tenants WHERE id = $1;', [id]);
+      if (res.rows.length === 0) return null;
+      return this.mapRowToTenant(res.rows[0]);
+    });
+  }
+
+  async findBySlug(slug: string): Promise<Tenant | null> {
+    return this.tenantContextService.withSystemContext(async client => {
+      const res = await client.query('SELECT * FROM tenants WHERE slug = $1;', [slug]);
+      if (res.rows.length === 0) return null;
+      return this.mapRowToTenant(res.rows[0]);
+    });
+  }
+
+  async update(id: string, dto: UpdateTenantDto): Promise<Tenant | null> {
+    return this.tenantContextService.withSystemContext(async client => {
+      const current = await this.findById(id);
+      if (!current) return null;
+
+      const res = await client.query(
+        `UPDATE tenants
+         SET name = COALESCE($1, name),
+             status = COALESCE($2, status),
+             tier = COALESCE($3, tier),
+             max_certificates = COALESCE($4, max_certificates),
+             max_gateways = COALESCE($5, max_gateways),
+             updated_at = NOW()
+         WHERE id = $6
+         RETURNING *;`,
+        [dto.name, dto.status, dto.tier, dto.maxCertificates, dto.maxGateways, id],
+      );
+
+      if (res.rows.length === 0) return null;
+      return this.mapRowToTenant(res.rows[0]);
+    });
+  }
+
+  async delete(id: string): Promise<boolean> {
+    return this.tenantContextService.withSystemContext(async client => {
+      const res = await client.query('DELETE FROM tenants WHERE id = $1;', [id]);
+      return (res.rowCount ?? 0) > 0;
+    });
+  }
+
+  private mapRowToTenant(row: any): Tenant {
+    return {
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      status: row.status as TenantStatus,
+      tier: row.tier as SubscriptionTier,
+      maxCertificates: row.max_certificates,
+      maxGateways: row.max_gateways,
+      awsAccountId: row.aws_account_id,
+      awsCustomerIdentifier: row.aws_customer_identifier,
+      awsProductCode: row.aws_product_code,
+      settings: row.settings || {},
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+      updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+    };
+  }
+}
+
