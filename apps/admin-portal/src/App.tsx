@@ -12,6 +12,9 @@ import {
   ShieldAlert,
   Cloud,
   Hash,
+  BarChart3,
+  TrendingUp,
+  ArrowUpRight,
 } from 'lucide-react';
 import {
   TenantStatus,
@@ -21,7 +24,7 @@ import {
   AuditAction,
   type AuditLog,
 } from '@clm/shared-types';
-import { Sidebar, StatusBadge, TopHeader, Modal } from '@clm/ui';
+import { Sidebar, StatusBadge, TopHeader, Modal, ConfirmDialog } from '@clm/ui';
 
 const INITIAL_TENANTS: Tenant[] = [
   {
@@ -160,25 +163,82 @@ export function App() {
     setNewAwsAccountId('');
   };
 
+  // Plan Upgrade / Downgrade Modal State
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [selectedPlanTier, setSelectedPlanTier] = useState<SubscriptionTier>(SubscriptionTier.ENTERPRISE);
+
+  // Confirm Dialog State
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'delete' | 'suspend' | 'activate';
+    tenantId: string;
+    name: string;
+  } | null>(null);
+
   const handleToggleStatus = (id: string) => {
+    const tenant = tenants.find(t => t.id === id);
+    if (!tenant) return;
+    setConfirmAction({
+      type: tenant.status === TenantStatus.ACTIVE ? 'suspend' : 'activate',
+      tenantId: id,
+      name: tenant.name,
+    });
+  };
+
+  const handleDeleteTenant = (id: string, name: string) => {
+    setConfirmAction({
+      type: 'delete',
+      tenantId: id,
+      name,
+    });
+  };
+
+  const handleExecuteConfirmedAction = () => {
+    if (!confirmAction) return;
+    const { type, tenantId } = confirmAction;
+
+    if (type === 'delete') {
+      setTenants(prev => prev.filter(t => t.id !== tenantId));
+      if (selectedTenantId === tenantId) {
+        setSelectedTenantId(tenants.find(t => t.id !== tenantId)?.id || '');
+      }
+    } else {
+      setTenants(prev =>
+        prev.map(t => {
+          if (t.id === tenantId) {
+            const nextStatus = t.status === TenantStatus.ACTIVE ? TenantStatus.SUSPENDED : TenantStatus.ACTIVE;
+            return { ...t, status: nextStatus };
+          }
+          return t;
+        }),
+      );
+    }
+    setConfirmAction(null);
+  };
+
+  const handleUpdateTenantTier = () => {
+    if (!selectedTenant) return;
+    const quotaMap: Record<SubscriptionTier, { certs: number; gateways: number }> = {
+      [SubscriptionTier.ENTERPRISE]: { certs: 1000, gateways: 25 },
+      [SubscriptionTier.PROFESSIONAL]: { certs: 500, gateways: 15 },
+      [SubscriptionTier.AWS_MARKETPLACE_PAYGO]: { certs: 250, gateways: 10 },
+      [SubscriptionTier.COMMUNITY]: { certs: 50, gateways: 2 },
+    };
+
+    const quota = quotaMap[selectedPlanTier];
     setTenants(prev =>
       prev.map(t => {
-        if (t.id === id) {
-          const nextStatus = t.status === TenantStatus.ACTIVE ? TenantStatus.SUSPENDED : TenantStatus.ACTIVE;
-          return { ...t, status: nextStatus };
+        if (t.id === selectedTenant.id) {
+          return {
+            ...t,
+            tier: selectedPlanTier,
+            maxCertificates: quota.certs,
+            maxGateways: quota.gateways,
+          };
         }
         return t;
       }),
     );
-  };
-
-  const handleDeleteTenant = (id: string, name: string) => {
-      if (window.confirm(`Are you sure you want to permanently delete organization '${name}'?`)) {
-        setTenants(prev => prev.filter(t => t.id !== id));
-        if (selectedTenantId === id) {
-          setSelectedTenantId(tenants.find(t => t.id !== id)?.id || '');
-        }
-    }
+    setIsPlanModalOpen(false);
   };
 
   const filteredTenants = tenants.filter(t => {
@@ -480,6 +540,17 @@ export function App() {
                                                               {/* Action Buttons */}
                                                               <div className="flex items-center gap-3 pt-2">
                                                                 <button
+                                                                  onClick={() => {
+                                                                    setSelectedPlanTier(selectedTenant.tier);
+                                                                    setIsPlanModalOpen(true);
+                                                                  }}
+                                                                  className="py-3 px-4 rounded-2xl text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1.5"
+                                                                >
+                                                                  <ArrowUpRight className="h-4 w-4" />
+                                                                  <span>Change Plan</span>
+                                                                </button>
+
+                                                                <button
                                                                   onClick={() => handleToggleStatus(selectedTenant.id)}
                                                                   className="primary-gradient-btn flex-1 py-3 px-5 rounded-2xl text-xs font-bold flex items-center justify-center gap-2"
                                                                 >
@@ -551,11 +622,11 @@ export function App() {
 
                                                             {/* Tab 3: AWS Marketplace View */}
                                                             {activeTab === 'marketplace' && (
-                                                              <div className="space-y-4 pr-3">
+                                                              <div className="space-y-5 pr-3 pb-6">
                                                                 <div className="grid grid-cols-3 gap-4">
                                                                   <div className="bg-white rounded-2xl soft-card p-5">
                                                                     <div className="text-xs font-bold text-slate-400 uppercase">Product Code</div>
-                                                                    <div className="text-base font-bold text-[#0F172A] mt-1">clm-saas-enterprise</div>
+                                                                    <div className="text-base font-bold text-[#0F172A] mt-1 font-mono">clm-saas-enterprise</div>
                                                                   </div>
                                                                   <div className="bg-white rounded-2xl soft-card p-5">
                                                                     <div className="text-xs font-bold text-slate-400 uppercase">Batch Interval</div>
@@ -563,8 +634,58 @@ export function App() {
                                                                   </div>
                                                                   <div className="bg-white rounded-2xl soft-card p-5">
                                                                     <div className="text-xs font-bold text-slate-400 uppercase">Callback Status</div>
-                                                                    <div className="text-base font-bold text-emerald-600 mt-1 flex items-center gap-1.5">
+                                                                    <div className="text-base font-bold text-emerald-600 mt-1 flex items-center gap-1.5 font-bold">
                                                                       <CheckCircle2 className="h-4 w-4" /> Healthy
+                                                                    </div>
+                                                                  </div>
+                                                                </div>
+
+                                                                {/* AWS Marketplace Usage Metering Dimension Chart */}
+                                                                <div className="bg-white rounded-[24px] soft-card p-6 space-y-4">
+                                                                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                                                    <div>
+                                                                      <div className="flex items-center gap-2">
+                                                                        <BarChart3 className="h-5 w-5 text-blue-600" />
+                                                                        <h4 className="text-base font-extrabold text-[#0F172A]">
+                                                                          AWS Marketplace Usage Metering
+                                                                        </h4>
+                                                                      </div>
+                                                                      <p className="text-xs text-slate-500 mt-0.5">
+                                                                        Dimension: <code className="text-blue-600 font-mono">active_certs_quantity</code> reported hourly to AWS Metering Service.
+                                                                      </p>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                                                                      <TrendingUp className="h-3.5 w-3.5" />
+                                                                      <span>1,300 billable cert-hours</span>
+                                                                    </div>
+                                                                  </div>
+
+                                                                  {/* Simulated Bar Graph */}
+                                                                  <div className="space-y-3 pt-2">
+                                                                    <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                                                                      <span>Organization Workspace</span>
+                                                                      <span>Active Monitored Certs / Quota</span>
+                                                                    </div>
+                                                                    <div className="space-y-3 font-mono text-xs">
+                                                                      {tenants.map(t => {
+                                                                        const usedPercent = Math.min(100, Math.round(((t.tier === 'ENTERPRISE' ? 450 : t.tier === 'AWS_MARKETPLACE_PAYGO' ? 180 : 35) / t.maxCertificates) * 100));
+                                                                        return (
+                                                                          <div key={t.id} className="p-3 rounded-xl bg-slate-50/80 border border-slate-100 space-y-2">
+                                                                            <div className="flex items-center justify-between">
+                                                                              <span className="font-bold font-sans text-slate-800">{t.name}</span>
+                                                                              <span className="text-slate-500">
+                                                                                {t.tier === 'ENTERPRISE' ? 450 : t.tier === 'AWS_MARKETPLACE_PAYGO' ? 180 : 35} / {t.maxCertificates} ({usedPercent}%)
+                                                                              </span>
+                                                                            </div>
+                                                                            <div className="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                                                              <div
+                                                                                className="h-full bg-linear-to-r from-blue-600 to-indigo-600 rounded-full transition-all"
+                                                                                style={{ width: `${usedPercent}%` }}
+                                                                              />
+                                                                            </div>
+                                                                          </div>
+                                                                        );
+                                                                      })}
                                                                     </div>
                                                                   </div>
                                                                 </div>
@@ -660,6 +781,104 @@ export function App() {
                                                                   </div>
                                                           </form>
       </Modal>
+
+      {/* Modal: Change Organization Plan */}
+      <Modal
+        isOpen={isPlanModalOpen}
+        onClose={() => setIsPlanModalOpen(false)}
+        title="Change Subscription Tier"
+        description={`Update plan and resource quotas for ${selectedTenant?.name}`}
+        maxWidth="md"
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-slate-700 uppercase">Select Plan Tier</label>
+            <div className="grid grid-cols-1 gap-2.5">
+              {[
+                {
+                  tier: SubscriptionTier.COMMUNITY,
+                  label: 'Community',
+                  desc: 'Free for open-source & testing (50 certs, 2 gateways)',
+                },
+                {
+                  tier: SubscriptionTier.AWS_MARKETPLACE_PAYGO,
+                  label: 'AWS Marketplace PayGO',
+                  desc: 'Metered billing via AWS (250 certs, 10 gateways)',
+                },
+                {
+                  tier: SubscriptionTier.ENTERPRISE,
+                  label: 'Enterprise',
+                  desc: 'Full private deployment & SLA (1000 certs, 25 gateways)',
+                },
+              ].map(plan => (
+                <div
+                  key={plan.tier}
+                  onClick={() => setSelectedPlanTier(plan.tier)}
+                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                    selectedPlanTier === plan.tier
+                      ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500/30'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-slate-800">{plan.label}</span>
+                    {selectedPlanTier === plan.tier && (
+                      <span className="h-2 w-2 rounded-full bg-blue-600" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">{plan.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsPlanModalOpen(false)}
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-900"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleUpdateTenantTier}
+              className="primary-gradient-btn px-5 py-2 rounded-xl text-xs font-bold"
+            >
+              Apply Tier Changes
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!confirmAction}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={handleExecuteConfirmedAction}
+        title={
+          confirmAction?.type === 'delete'
+            ? 'Delete Organization'
+            : confirmAction?.type === 'suspend'
+              ? 'Suspend Organization'
+              : 'Activate Organization'
+        }
+        description={
+          confirmAction?.type === 'delete'
+            ? `Are you sure you want to permanently delete '${confirmAction?.name}'? This will delete all tenant certificates, gateway mappings, and PostgreSQL Row-Level Security partitions.`
+            : confirmAction?.type === 'suspend'
+              ? `Are you sure you want to suspend '${confirmAction?.name}'? Their gateways will be disconnected and certificate auto-renewals will halt.`
+              : `Activate organization '${confirmAction?.name}'? All services and automated renewals will resume.`
+        }
+        confirmLabel={
+          confirmAction?.type === 'delete'
+            ? 'Delete Organization'
+            : confirmAction?.type === 'suspend'
+              ? 'Suspend Organization'
+              : 'Activate'
+        }
+        variant={confirmAction?.type === 'delete' ? 'danger' : 'warning'}
+      />
                                                     </div>
                                                     );
 }

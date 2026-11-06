@@ -13,6 +13,11 @@ import {
   Copy,
   Check,
   Lock,
+  Download,
+  Filter,
+  Eye,
+  Calendar,
+  Layers,
 } from 'lucide-react';
 import {
   CertStatus,
@@ -21,7 +26,7 @@ import {
   type Certificate,
   type Gateway,
 } from '@clm/shared-types';
-import { Sidebar, TopHeader, Modal, StatusBadge } from '@clm/ui';
+import { Sidebar, TopHeader, Modal, StatusBadge, Drawer, ConfirmDialog } from '@clm/ui';
 
 const INITIAL_CERTIFICATES: Certificate[] = [
   {
@@ -181,8 +186,13 @@ export function App() {
   const [selectedCertId, setSelectedCertId] = useState<string>(INITIAL_CERTIFICATES[0]?.id ?? '');
   const [activeTab, setActiveTab] = useState<'certificates' | 'gateways' | 'audit' | 'alerts' | 'settings'>('certificates');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXPIRING' | 'CRITICAL'>('ALL');
+  const [targetFilter, setTargetFilter] = useState<'ALL' | 'AWS_ACM' | 'AWS_ALB' | 'NGINX'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Inspector Drawer & Delete Dialog
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [certToDelete, setCertToDelete] = useState<{ id: string; domain: string } | null>(null);
 
   // Add Certificate Modal
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -213,18 +223,79 @@ export function App() {
         const expiringCount = useMemo(() => certs.filter(c => c.status === CertStatus.EXPIRING_SOON).length, [certs]);
         const criticalCount = useMemo(() => certs.filter(c => c.status === CertStatus.EXPIRED || c.daysRemaining <= 7).length, [certs]);
 
+        // Expiry Histogram buckets
+        const expiryHistogram = useMemo(() => {
+          return {
+            critical: certs.filter(c => c.daysRemaining <= 7).length,
+            warning: certs.filter(c => c.daysRemaining > 7 && c.daysRemaining <= 30).length,
+            upcoming: certs.filter(c => c.daysRemaining > 30 && c.daysRemaining <= 90).length,
+            healthy: certs.filter(c => c.daysRemaining > 90).length,
+          };
+        }, [certs]);
+
         const filteredCerts = useMemo(() => {
           return certs.filter(c => {
             const matchesSearch =
               c.domain.toLowerCase().includes(searchTerm.toLowerCase()) ||
               c.issuer.toLowerCase().includes(searchTerm.toLowerCase()) ||
               c.keyAlgorithm.toLowerCase().includes(searchTerm.toLowerCase());
-            if (statusFilter === 'ACTIVE') return matchesSearch && c.status === CertStatus.ACTIVE;
-            if (statusFilter === 'EXPIRING') return matchesSearch && c.status === CertStatus.EXPIRING_SOON;
-            if (statusFilter === 'CRITICAL') return matchesSearch && (c.status === CertStatus.EXPIRED || c.daysRemaining <= 7);
-            return matchesSearch;
+            
+            let matchesStatus = true;
+            if (statusFilter === 'ACTIVE') matchesStatus = c.status === CertStatus.ACTIVE;
+            if (statusFilter === 'EXPIRING') matchesStatus = c.status === CertStatus.EXPIRING_SOON;
+            if (statusFilter === 'CRITICAL') matchesStatus = c.status === CertStatus.EXPIRED || c.daysRemaining <= 7;
+
+            let matchesTarget = true;
+            if (targetFilter === 'AWS_ACM') matchesTarget = c.domain.includes('example.com') && c.deployTargetCount >= 2;
+            if (targetFilter === 'AWS_ALB') matchesTarget = c.deployTargetCount >= 1;
+            if (targetFilter === 'NGINX') matchesTarget = c.domain.includes('portal') || c.domain.includes('static');
+
+            return matchesSearch && matchesStatus && matchesTarget;
           });
-        }, [certs, searchTerm, statusFilter]);
+        }, [certs, searchTerm, statusFilter, targetFilter]);
+
+        const exportAsJson = () => {
+          const exportData = filteredCerts.map(({ id, domain, sans, status, keyAlgorithm, issuer, daysRemaining, notBefore, notAfter }) => ({
+            id,
+            domain,
+            sans,
+            status,
+            keyAlgorithm,
+            issuer,
+            daysRemaining,
+            notBefore,
+            notAfter,
+          }));
+          const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `clm-certificates-${new Date().toISOString().slice(0, 10)}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        };
+
+        const exportAsCsv = () => {
+          const headers = ['ID', 'Domain', 'SANs', 'Status', 'Algorithm', 'Issuer', 'DaysRemaining', 'ExpiresAt'];
+          const rows = filteredCerts.map(c => [
+            c.id,
+            c.domain,
+            `"${c.sans.join(';')}"`,
+            c.status,
+            c.keyAlgorithm,
+            `"${c.issuer}"`,
+            c.daysRemaining,
+            c.notAfter,
+          ]);
+          const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `clm-certificates-${new Date().toISOString().slice(0, 10)}.csv`;
+          a.click();
+          URL.revokeObjectURL(url);
+        };
 
         const handleCreateCertificate = (e: React.FormEvent) => {
           e.preventDefault();
@@ -282,12 +353,17 @@ export function App() {
         };
 
         const handleDeleteCertificate = (certId: string, domain: string) => {
-          if (window.confirm(`Are you sure you want to delete certificate for '${domain}'?`)) {
-            setCerts(prev => prev.filter(c => c.id !== certId));
-            if (selectedCertId === certId) {
-              setSelectedCertId(certs.find(c => c.id !== certId)?.id || '');
-            }
+          setCertToDelete({ id: certId, domain });
+        };
+
+        const confirmDeleteCertificate = () => {
+          if (!certToDelete) return;
+          const { id } = certToDelete;
+          setCerts(prev => prev.filter(c => c.id !== id));
+          if (selectedCertId === id) {
+            setSelectedCertId(certs.find(c => c.id !== id)?.id || '');
           }
+          setCertToDelete(null);
         };
 
         const navItems = [
@@ -411,38 +487,123 @@ export function App() {
                       {/* 3. CERTIFICATES TAB (2-Column Master-Detail Layout)                     */}
                       {/* ======================================================================= */}
                       {activeTab === 'certificates' && (
-                        <div className="grid grid-cols-12 gap-5 pr-3 pb-6">
-                          {/* LEFT COLUMN: Certificates Master List (Span 5) */}
-                          <div className="col-span-12 xl:col-span-5">
-                            <div className="bg-white rounded-[28px] soft-card p-5 space-y-4">
-                              {/* Pill Tabs */}
-                              <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#F8FAFC] border border-slate-100">
+                        <div className="space-y-5 pr-3 pb-6">
+                          {/* Top Controls: Expiry Histogram & Export Actions */}
+                          <div className="grid grid-cols-12 gap-5">
+                            {/* Expiry Timeline Widget */}
+                            <div className="col-span-12 lg:col-span-8 bg-white rounded-[24px] soft-card p-5">
+                              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                <div className="flex items-center gap-2">
+                                  <Calendar className="h-4 w-4 text-blue-600" />
+                                  <h4 className="text-xs font-extrabold text-[#0F172A] uppercase tracking-wider">
+                                    Certificate Expiry Timeline
+                                  </h4>
+                                </div>
+                                <span className="text-[11px] font-medium text-slate-400">
+                                  Total {certs.length} Active Monitored
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-4 gap-3 pt-3">
+                                <div className="p-3 rounded-2xl bg-rose-50/60 border border-rose-100">
+                                  <div className="text-[10px] font-bold text-rose-600 uppercase">Within 7 Days</div>
+                                  <div className="text-lg font-black text-rose-700 mt-0.5">{expiryHistogram.critical}</div>
+                                  <div className="text-[10px] text-rose-500 font-medium mt-0.5">Immediate renewal</div>
+                                </div>
+                                <div className="p-3 rounded-2xl bg-amber-50/60 border border-amber-100">
+                                  <div className="text-[10px] font-bold text-amber-600 uppercase">8 - 30 Days</div>
+                                  <div className="text-lg font-black text-amber-700 mt-0.5">{expiryHistogram.warning}</div>
+                                  <div className="text-[10px] text-amber-500 font-medium mt-0.5">Renewal queued</div>
+                                </div>
+                                <div className="p-3 rounded-2xl bg-blue-50/60 border border-blue-100">
+                                  <div className="text-[10px] font-bold text-blue-600 uppercase">31 - 90 Days</div>
+                                  <div className="text-lg font-black text-blue-700 mt-0.5">{expiryHistogram.upcoming}</div>
+                                  <div className="text-[10px] text-blue-500 font-medium mt-0.5">Monitored</div>
+                                </div>
+                                <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">
+                                  <div className="text-[10px] font-bold text-emerald-600 uppercase">&gt; 90 Days</div>
+                                  <div className="text-lg font-black text-emerald-700 mt-0.5">{expiryHistogram.healthy}</div>
+                                  <div className="text-[10px] text-emerald-500 font-medium mt-0.5">Healthy & valid</div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Export & Target Filter Card */}
+                            <div className="col-span-12 lg:col-span-4 bg-white rounded-[24px] soft-card p-5 flex flex-col justify-between">
+                              <div>
+                                <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+                                  <Filter className="h-4 w-4 text-blue-600" />
+                                  <h4 className="text-xs font-extrabold text-[#0F172A] uppercase tracking-wider">
+                                    Target & Export
+                                  </h4>
+                                </div>
+                                <div className="pt-3 space-y-2">
+                                  <label className="text-[11px] font-bold text-slate-500 uppercase">Filter By Target</label>
+                                  <select
+                                    value={targetFilter}
+                                    onChange={e => setTargetFilter(e.target.value as any)}
+                                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600"
+                                  >
+                                    <option value="ALL">All Targets (AWS ACM, ALB, NGINX)</option>
+                                    <option value="AWS_ACM">AWS ACM Endpoints</option>
+                                    <option value="AWS_ALB">AWS Application Load Balancers</option>
+                                    <option value="NGINX">NGINX / On-Prem Gateways</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
                                 <button
-                                  onClick={() => setStatusFilter('ALL')}
-                                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'ALL' ? 'pill-tab-active' : 'pill-tab-inactive'
-                                    }`}
+                                  onClick={exportAsCsv}
+                                  className="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
                                 >
-                                  All ({certs.length})
+                                  <Download className="h-3.5 w-3.5" />
+                                  <span>CSV</span>
                                 </button>
                                 <button
-                                  onClick={() => setStatusFilter('ACTIVE')}
-                                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'ACTIVE' ? 'pill-tab-active' : 'pill-tab-inactive'
-                                    }`}
+                                  onClick={exportAsJson}
+                                  className="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
                                 >
-                                  Active ({activeCount})
+                                  <Download className="h-3.5 w-3.5" />
+                                  <span>JSON</span>
                                 </button>
-                                <button
-                                  onClick={() => setStatusFilter('EXPIRING')}
-                                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'EXPIRING' ? 'pill-tab-active' : 'pill-tab-inactive'
-                                    }`}
-                                >
-                                  Expiring ({expiringCount})
-                                </button>
-                                <button
-                                  onClick={() => setStatusFilter('CRITICAL')}
-                                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'CRITICAL' ? 'pill-tab-active' : 'pill-tab-inactive'
-                                    }`}
-                                >
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 2-Column Master-Detail Layout */}
+                          <div className="grid grid-cols-12 gap-5">
+                            {/* LEFT COLUMN: Certificates Master List (Span 5) */}
+                            <div className="col-span-12 xl:col-span-5">
+                              <div className="bg-white rounded-[28px] soft-card p-5 space-y-4">
+                                {/* Pill Tabs */}
+                                <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#F8FAFC] border border-slate-100">
+                                  <button
+                                    onClick={() => setStatusFilter('ALL')}
+                                    className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'ALL' ? 'pill-tab-active' : 'pill-tab-inactive'
+                                      }`}
+                                  >
+                                    All ({certs.length})
+                                  </button>
+                                  <button
+                                    onClick={() => setStatusFilter('ACTIVE')}
+                                    className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'ACTIVE' ? 'pill-tab-active' : 'pill-tab-inactive'
+                                      }`}
+                                  >
+                                    Active ({activeCount})
+                                  </button>
+                                  <button
+                                    onClick={() => setStatusFilter('EXPIRING')}
+                                    className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'EXPIRING' ? 'pill-tab-active' : 'pill-tab-inactive'
+                                      }`}
+                                  >
+                                    Expiring ({expiringCount})
+                                  </button>
+                                  <button
+                                    onClick={() => setStatusFilter('CRITICAL')}
+                                    className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'CRITICAL' ? 'pill-tab-active' : 'pill-tab-inactive'
+                                      }`}
+                                  >
                                   Critical ({criticalCount})
                                 </button>
                               </div>
@@ -672,28 +833,26 @@ export function App() {
                                                         onClick={() => handleRenewCertificate(selectedCert.id)}
                                                         className="primary-gradient-btn flex-1 py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-500/25"
                                                       >
-                      <RefreshCw className="h-4 w-4" />
-                                                      <span>Approve & Trigger Immediate Renewal</span>
-                                                    </button>
-                                                    <button
-                                                      onClick={() =>
-                                                        alert(
-                                                          `Certificate CSR for ${selectedCert.domain}\nAlgorithm: ${selectedCert.keyAlgorithm}\nFingerprint: ${selectedCert.fingerprintSha256}`,
-                                                        )
-                                                      }
-                                                      className="px-4 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors"
-                                                    >
-                      View CSR
-                    </button>
+                                                        <RefreshCw className="h-4 w-4" />
+                                                        <span>Approve & Trigger Immediate Renewal</span>
+                                                      </button>
+                                                      <button
+                                                        onClick={() => setIsDrawerOpen(true)}
+                                                        className="px-4 py-3 rounded-2xl bg-blue-50 border border-blue-200 hover:bg-blue-100 text-xs font-bold text-blue-700 transition-colors flex items-center gap-1.5"
+                                                      >
+                                                        <Eye className="h-4 w-4" />
+                                                        <span>Deep Inspector</span>
+                                                      </button>
+                                                    </div>
+                                                </div>
+                                                ) : (
+                                                <div className="bg-white rounded-[28px] soft-card p-12 text-center text-slate-400 text-sm">
+                                                  Select a certificate from the left column to view its details.
+                                                </div>
+                                              )}
+                                            </div>
                                           </div>
-                                      </div>
-                                      ) : (
-                                      <div className="bg-white rounded-[28px] soft-card p-12 text-center text-slate-400 text-sm">
-                                        Select a certificate from the left column to view its details.
-                                      </div>
-              )}
-                                  </div>
-                                </div>
+                                        </div>
         )}
 
                                 {/* ======================================================================= */}
@@ -978,6 +1137,123 @@ export function App() {
                                           </div>
                                         </div>
                                       </Modal>
+
+                                      {/* Deep Certificate Inspector Drawer */}
+                                      <Drawer
+                                        isOpen={isDrawerOpen}
+                                        onClose={() => setIsDrawerOpen(false)}
+                                        title={`Deep Certificate Inspector: ${selectedCert?.domain}`}
+                                        description="Comprehensive cryptographic chain, SANs, and deployment targets"
+                                        width="xl"
+                                        footer={
+                                          <div className="flex items-center justify-between w-full">
+                                            <span className="text-xs text-slate-400 font-mono">
+                                              SHA-256: {selectedCert?.fingerprintSha256.substring(0, 16)}...
+                                            </span>
+                                            <button
+                                              onClick={() => setIsDrawerOpen(false)}
+                                              className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-white hover:bg-slate-700 transition-colors"
+                                            >
+                                              Close Inspector
+                                            </button>
+                                          </div>
+                                        }
+                                      >
+                                        {selectedCert && (
+                                          <div className="space-y-6">
+                                            {/* Header Status */}
+                                            <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 flex items-center justify-between">
+                                              <div>
+                                                <div className="text-xs text-blue-600 font-bold uppercase">Status</div>
+                                                <div className="text-base font-extrabold text-blue-900 mt-0.5">{selectedCert.status}</div>
+                                              </div>
+                                              <div className="text-right">
+                                                <div className="text-xs text-blue-600 font-bold uppercase">Days Remaining</div>
+                                                <div className="text-base font-extrabold text-blue-900 mt-0.5">{selectedCert.daysRemaining} days</div>
+                                              </div>
+                                            </div>
+
+                                            {/* Subject Alternative Names */}
+                                            <div className="space-y-2">
+                                              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                                <Layers className="h-3.5 w-3.5 text-blue-600" />
+                                                <span>Subject Alternative Names (SANs)</span>
+                                              </h4>
+                                              <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl space-y-1">
+                                                {selectedCert.sans.map((san, idx) => (
+                                                  <div key={idx} className="font-mono text-xs text-slate-800 flex items-center gap-2">
+                                                    <span className="text-slate-400">DNS:{idx + 1}</span>
+                                                    <span>{san}</span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+
+                                            {/* Cryptographic Specifications */}
+                                            <div className="space-y-2">
+                                              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                                <Lock className="h-3.5 w-3.5 text-blue-600" />
+                                                <span>Cryptographic Metadata</span>
+                                              </h4>
+                                              <div className="p-3.5 bg-slate-50 border border-slate-200/60 rounded-xl space-y-2 text-xs">
+                                                <div className="flex justify-between">
+                                                  <span className="text-slate-500">Key Algorithm</span>
+                                                  <span className="font-mono font-bold text-slate-800">{selectedCert.keyAlgorithm}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                  <span className="text-slate-500">Serial Number</span>
+                                                  <span className="font-mono text-slate-800">{selectedCert.serialNumber}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                  <span className="text-slate-500">Certificate Authority</span>
+                                                  <span className="text-slate-800 font-semibold">{selectedCert.issuer}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                  <span className="text-slate-500">Valid From</span>
+                                                  <span className="text-slate-700">{new Date(selectedCert.notBefore).toUTCString()}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                  <span className="text-slate-500">Valid To</span>
+                                                  <span className="text-slate-700">{new Date(selectedCert.notAfter).toUTCString()}</span>
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                            {/* Simulated PEM Chain Viewer */}
+                                            <div className="space-y-2">
+                                              <div className="flex items-center justify-between">
+                                                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                                  <FileText className="h-3.5 w-3.5 text-blue-600" />
+                                                  <span>PEM Certificate Chain</span>
+                                                </h4>
+                                                <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-mono font-bold">
+                                                  Chain Verified
+                                                </span>
+                                              </div>
+                                              <pre className="p-3.5 rounded-xl bg-slate-900 text-slate-200 font-mono text-[11px] overflow-x-auto leading-relaxed">
+{`-----BEGIN CERTIFICATE-----
+MIIF4zCCBMugAwIBAgIQB8nZ/C8r+75d1v2v4f0aODANBgkqhkiG9w0BAQsFADBh
+MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
+d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD
+... [Truncated for inspection] ...
+${selectedCert.fingerprintSha256.substring(0, 48)}
+-----END CERTIFICATE-----`}
+                                              </pre>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </Drawer>
+
+                                      {/* Confirmation Dialog for Certificate Revocation / Deletion */}
+                                      <ConfirmDialog
+                                        isOpen={!!certToDelete}
+                                        onClose={() => setCertToDelete(null)}
+                                        onConfirm={confirmDeleteCertificate}
+                                        title="Revoke & Delete Certificate"
+                                        description={`Are you sure you want to permanently delete the certificate for '${certToDelete?.domain}'? Active HTTPS traffic relying on this certificate may terminate immediately.`}
+                                        confirmLabel="Revoke & Delete"
+                                        variant="danger"
+                                      />
                                     </div>
                                     );
 }
