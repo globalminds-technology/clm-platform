@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.turbo/
+out/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# Operating System
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+
+# Go build outputs
+bin/
+apps/gateway/gateway
+apps/gateway/gateway.exe
+*.exe
+
+# Database & Runtime State
+*.log
+*.sqlite
+*.sqlite-journal
+postgres_data/
+state/
+keys/
+*.key
+*.pem
+*.crt
