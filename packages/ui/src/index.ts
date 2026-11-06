@@ -6,3 +6,6 @@ export * from './components/StatusBadge';
 export * from './components/Sidebar';
 export * from './components/Modal';
 export * from './components/TopHeader';
+export * from './components/DataTable';
+export * from './components/Drawer';
+export * from './components/ConfirmDialog';
