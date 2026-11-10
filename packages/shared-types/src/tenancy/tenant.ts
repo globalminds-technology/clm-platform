@@ -39,7 +39,10 @@ export interface CreateTenantRequest {
   adminEmail: string;
   adminFirstName: string;
   adminLastName: string;
+  awsAccountId?: string;
   awsCustomerIdentifier?: string;
+  maxCertificates?: number;
+  maxGateways?: number;
 }
 
 export interface UpdateTenantRequest {

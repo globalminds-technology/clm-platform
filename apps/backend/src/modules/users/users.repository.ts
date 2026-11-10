@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { TenantContextService } from '../../shared/tenancy/tenant-context.service';
 import { Role, UserStatus, type User } from '@clm/shared-types';
 import { type CreateUserDto } from './dto/create-user.dto';
@@ -9,8 +9,6 @@ export interface UserEntityWithPassword extends User {
 
 @Injectable()
 export class UsersRepository {
-  private readonly logger = new Logger(UsersRepository.name);
-
   constructor(private readonly tenantContextService: TenantContextService) { }
 
   async findAll(tenantId: string): Promise<User[]> {

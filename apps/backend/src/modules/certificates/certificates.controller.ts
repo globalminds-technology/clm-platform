@@ -1,41 +1,87 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { Role, type Certificate } from '@clm/shared-types';
+import { Role, type Certificate, type CertificateFilterParams } from '@clm/shared-types';
 import { Roles } from '../../shared/auth/roles.decorator';
 import { RolesGuard } from '../../shared/auth/roles.guard';
+import { JwtAuthGuard } from '../../shared/auth/jwt-auth.guard';
+import { CurrentTenant } from '../../shared/tenancy/current-tenant.decorator';
 import { CertificatesService } from './certificates.service';
 import { CreateCertificateDto } from './dto/create-certificate.dto';
 
 @ApiTags('Certificates')
 @ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('certificates')
-@UseGuards(RolesGuard)
 export class CertificatesController {
-  constructor(private readonly certificatesService: CertificatesService) {}
+  constructor(private readonly certificatesService: CertificatesService) { }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.AUDITOR, Role.READ_ONLY)
-  @ApiOperation({ summary: 'List certificates with optional filtering' })
-  @ApiResponse({ status: 200, description: 'List of certificates returned' })
-  findAll(@Query('domain') domain?: string, @Query('status') status?: any): Certificate[] {
-    return this.certificatesService.findAll({ domain, status });
-  }
+    @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.AUDITOR)
+    @ApiOperation({ summary: 'List all certificates under RLS tenant isolation' })
+    @ApiResponse({ status: 200, description: 'Certificates retrieved successfully' })
+    async findAll(
+      @CurrentTenant() tenantId: string,
+      @Query() filters ?: CertificateFilterParams,
+    ): Promise < Certificate[] > {
+      return this.certificatesService.findAll(tenantId, filters);
+    }
 
-  @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.AUDITOR, Role.READ_ONLY)
-  @ApiOperation({ summary: 'Get certificate details by UUID' })
-  @ApiResponse({ status: 200, description: 'Certificate details found' })
-  @ApiResponse({ status: 404, description: 'Certificate not found' })
-  findOne(@Param('id') id: string): Certificate {
-    return this.certificatesService.findById(id);
-  }
+    @Get(':id')
+    @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.AUDITOR)
+    @ApiOperation({ summary: 'Get certificate details by ID' })
+    @ApiResponse({ status: 200, description: 'Certificate retrieved successfully' })
+    @ApiResponse({ status: 404, description: 'Certificate not found' })
+  async findOne(
+        @CurrentTenant() tenantId: string,
+        @Param('id') id: string,
+      ): Promise < Certificate > {
+        return this.certificatesService.findById(tenantId, id);
+      }
 
-  @Post()
-  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER)
-  @ApiOperation({ summary: 'Request or import a new certificate' })
-  @ApiResponse({ status: 201, description: 'Certificate created/requested successfully' })
-  create(@Body() createCertDto: CreateCertificateDto): Certificate {
-    return this.certificatesService.create(createCertDto);
-  }
-}
+      @Post()
+      @HttpCode(HttpStatus.CREATED)
+      @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER)
+        @ApiOperation({ summary: 'Create and track a new SSL/TLS certificate' })
+        @ApiResponse({ status: 201, description: 'Certificate registered' })
+        async create(
+          @CurrentTenant() tenantId: string,
+          @Body() createDto: CreateCertificateDto,
+        ): Promise < Certificate > {
+          return this.certificatesService.create(tenantId, createDto);
+        }
 
+        @Post(':id/renew')
+        @HttpCode(HttpStatus.OK)
+        @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER)
+        @ApiOperation({ summary: 'Trigger renewal workflow for a certificate' })
+        @ApiResponse({ status: 200, description: 'Renewal triggered' })
+        async renew(
+          @CurrentTenant() tenantId: string,
+          @Param('id') id: string,
+        ): Promise < Certificate > {
+          return this.certificatesService.renew(tenantId, id);
+        }
+
+        @Delete(':id')
+        @HttpCode(HttpStatus.NO_CONTENT)
+        @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN)
+        @ApiOperation({ summary: 'Revoke and delete a certificate' })
+        @ApiResponse({ status: 204, description: 'Certificate deleted' })
+        async delete (
+          @CurrentTenant() tenantId: string,
+            @Param('id') id: string,
+  ): Promise < void> {
+          return this.certificatesService.delete(tenantId, id);
+        }
+      }

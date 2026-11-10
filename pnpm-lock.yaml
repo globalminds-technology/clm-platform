@@ -23,6 +23,9 @@ importers:
 
   apps/admin-portal:
     dependencies:
+      '@clm/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@clm/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -158,8 +161,13 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  apps/gateway: {}
+
   apps/tenant-portal:
     dependencies:
+      '@clm/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@clm/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types

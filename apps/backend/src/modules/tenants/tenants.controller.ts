@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { Role, type Tenant } from '@clm/shared-types';
 import { Roles } from '../../shared/auth/roles.decorator';
 import { RolesGuard } from '../../shared/auth/roles.guard';
+import { JwtAuthGuard } from '../../shared/auth/jwt-auth.guard';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
@@ -10,7 +11,7 @@ import { UpdateTenantDto } from './dto/update-tenant.dto';
 @ApiTags('Tenants')
 @ApiBearerAuth()
 @Controller('tenants')
-@UseGuards(RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class TenantsController {
   constructor(private readonly tenantsService: TenantsService) { }
 

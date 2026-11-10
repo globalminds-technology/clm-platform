@@ -12,12 +12,12 @@ export interface ApiClientConfig extends Partial<HttpClientConfig> {
 }
 
 export interface ApiClient {
-  certificates: CertificatesEndpoint | MockApiClient['certificates'];
-  gateways: GatewaysEndpoint | MockApiClient['gateways'];
-  tenants: TenantsEndpoint | MockApiClient['tenants'];
-  deployments: DeploymentsEndpoint | MockApiClient['deployments'];
-  audit: AuditEndpoint | MockApiClient['audit'];
-  auth: AuthEndpoint | MockApiClient['auth'];
+  certificates: CertificatesEndpoint;
+  gateways: GatewaysEndpoint;
+  tenants: TenantsEndpoint;
+  deployments: DeploymentsEndpoint;
+  audit: AuditEndpoint;
+  auth: AuthEndpoint;
   http?: HttpClient;
 }
 

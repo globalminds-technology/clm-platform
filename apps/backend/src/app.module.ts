@@ -1,20 +1,31 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { HealthModule } from './shared/health/health.module';
+import { DatabaseModule } from './shared/database/database.module';
+import { TenancyModule } from './shared/tenancy/tenancy.module';
+import { CryptoModule } from './shared/crypto/crypto.module';
+import { AuthModule } from './shared/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
 import { GatewaysModule } from './modules/gateways/gateways.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
+import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    DatabaseModule,
+    TenancyModule,
+    CryptoModule,
+    AuthModule,
     HealthModule,
+    UsersModule,
+    TenantsModule,
     CertificatesModule,
     GatewaysModule,
-    TenantsModule,
+    AuditLogsModule,
   ],
 })
-export class AppModule {}
-
+export class AppModule { }

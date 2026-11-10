@@ -8,6 +8,9 @@ module.exports = {
   darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"Plus Jakarta Sans"', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+      },
       colors: {
         border: 'hsl(var(--border, 214.3 31.8% 91.4%))',
         background: 'hsl(var(--background, 0 0% 100%))',
@@ -17,4 +20,3 @@ module.exports = {
   },
   plugins: [],
 };
-

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CLM Platform - Database ER Diagram</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #111827;
+      --border: #1f2937;
+      --text-main: #f9fafb;
+      --text-muted: #9ca3af;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --accent: #6366f1;
+      --success: #10b981;
+      --badge-pk: #f59e0b;
+      --badge-fk: #8b5cf6;
+      --table-header: #1e293b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .title-area h1 {
+      font-size: 24px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.025em;
+    }
+
+    .title-area p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .actions-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+      color: #ffffff;
+      box-shadow: 0 4px 14px 0 rgba(37, 99, 235, 0.35);
+    }
+
+    .btn-primary:hover {
+      opacity: 0.95;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: #1f2937;
+      color: #e5e7eb;
+      border-color: #374151;
+    }
+
+    .btn-secondary:hover {
+      background: #374151;
+      color: #ffffff;
+    }
+
+    .diagram-container {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 16px;
+      padding: 24px;
+      overflow-x: auto;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      margin-bottom: 28px;
+      display: flex;
+      justify-content: center;
+    }
+
+    svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .legend {
+      display: flex;
+      gap: 20px;
+      margin-top: 16px;
+      padding: 12px 18px;
+      background: #111827;
+      border-radius: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+      align-items: center;
+      border: 1px solid var(--border);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .badge-pk { background: #b45309; color: #fef3c7; }
+    .badge-fk { background: #5b21b6; color: #ede9fe; }
+    .badge-rls { background: #065f46; color: #d1fae5; }
+
+    @media print {
+      body { background: white; color: black; padding: 0; }
+      .actions-bar { display: none; }
+      .diagram-container { box-shadow: none; border: none; background: white; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title-area">
+      <h1>CLM Platform - Database Schema & ER Diagram</h1>
+      <p>PostgreSQL 16 Multi-Tenant Architecture with Row-Level Security (RLS) & Append-Only Audit Trail</p>
+    </div>
+    <div class="actions-bar">
+      <button class="btn btn-primary" onclick="downloadSVG()">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Download SVG
+      </button>
+      <button class="btn btn-secondary" onclick="downloadPNG()">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        Download PNG
+      </button>
+      <button class="btn btn-secondary" onclick="window.print()">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+        Print / PDF
+      </button>
+    </div>
+  </header>
+
+  <div class="legend">
+    <span style="font-weight: 700; color: #fff;">Legend:</span>
+    <div class="legend-item"><span class="badge badge-pk">PK</span> Primary Key</div>
+    <div class="legend-item"><span class="badge badge-fk">FK</span> Foreign Key (Tenant-Scoped Cascade)</div>
+    <div class="legend-item"><span class="badge badge-rls">RLS</span> Row-Level Security Enforced</div>
+    <div class="legend-item" style="margin-left: auto;"><span>PostgreSQL Runtime Role: <code>clm_app</code> (NOBYPASSRLS)</span></div>
+  </div>
+
+  <div class="diagram-container" id="svg-wrapper">
+    <svg id="er-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1340 960" width="1340" height="960" style="background:#0f172a;">
+      <defs>
+        <linearGradient id="header-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#2563eb"/>
+          <stop offset="100%" stop-color="#4f46e5"/>
+        </linearGradient>
+        <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+          <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.35"/>
+        </filter>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6"/>
+        </marker>
+        <marker id="diamond" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <polygon points="5,0 10,5 5,10 0,5" fill="#3b82f6"/>
+        </marker>
+      </defs>
+
+      <!-- Connection Lines with Markers -->
+      <!-- TENANTS -> USERS -->
+      <path d="M 280 230 L 280 340" fill="none" stroke="#3b82f6" stroke-width="2" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+      <!-- TENANTS -> GATEWAYS -->
+      <path d="M 440 160 L 520 160" fill="none" stroke="#3b82f6" stroke-width="2" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+      <!-- TENANTS -> CERTIFICATES -->
+      <path d="M 440 200 L 730 350" fill="none" stroke="#3b82f6" stroke-width="2" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+      <!-- GATEWAYS -> DEPLOY_TARGETS -->
+      <path d="M 800 160 L 900 160" fill="none" stroke="#3b82f6" stroke-width="2" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+      <!-- GATEWAYS -> GATEWAY_COMMANDS -->
+      <path d="M 660 300 L 660 670 L 520 670" fill="none" stroke="#3b82f6" stroke-width="2" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+      <!-- CERTIFICATES -> DEPLOYMENT_RECORDS -->
+      <path d="M 1000 520 L 1000 640" fill="none" stroke="#3b82f6" stroke-width="2" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+      <!-- DEPLOY_TARGETS -> DEPLOYMENT_RECORDS -->
+      <path d="M 1120 300 L 1120 640" fill="none" stroke="#3b82f6" stroke-width="2" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+      <!-- TENANTS -> AUDIT_LOGS -->
+      <path d="M 160 230 L 160 640" fill="none" stroke="#3b82f6" stroke-width="2" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+
+      <!-- ======================================================== -->
+      <!-- TABLE: TENANTS (Root Entity)                             -->
+      <!-- ======================================================== -->
+      <g transform="translate(40, 60)" filter="url(#shadow)">
+        <rect width="400" height="170" rx="12" fill="#1e293b" stroke="#3b82f6" stroke-width="2"/>
+        <rect width="400" height="38" rx="12" fill="url(#header-grad)"/>
+        <rect width="400" height="12" y="26" fill="url(#header-grad)"/>
+        <text x="16" y="24" fill="#ffffff" font-size="14" font-weight="bold">TENANTS (Root Subscriber Entity)</text>
+        <text x="340" y="24" fill="#dbeafe" font-size="11" font-weight="600">Global</text>
+        
+        <g transform="translate(16, 56)" fill="#e2e8f0" font-size="12">
+          <text y="0"><tspan fill="#f59e0b" font-weight="bold">PK</tspan>  id : UUID</text>
+          <text y="20">name : VARCHAR(255)</text>
+          <text y="40">slug : VARCHAR(100) (UNIQUE)</text>
+          <text y="60">tier : VARCHAR(50) [COMMUNITY, ENTERPRISE, PAYGO]</text>
+          <text y="80">aws_account_id, aws_customer_identifier, aws_product_code</text>
+          <text y="100">max_certificates, max_gateways, settings : JSONB</text>
+        </g>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- TABLE: USERS                                             -->
+      <!-- ======================================================== -->
+      <g transform="translate(40, 340)" filter="url(#shadow)">
+        <rect width="360" height="230" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+        <rect width="360" height="36" rx="12" fill="#1e293b"/>
+        <rect width="360" height="10" y="26" fill="#1e293b"/>
+        <path d="M 0 36 L 360 36" stroke="#334155" stroke-width="1"/>
+        <text x="16" y="23" fill="#ffffff" font-size="13" font-weight="bold">USERS</text>
+        <text x="310" y="23" fill="#10b981" font-size="11" font-weight="bold">RLS</text>
+
+        <g transform="translate(16, 56)" fill="#cbd5e1" font-size="12">
+          <text y="0"><tspan fill="#f59e0b" font-weight="bold">PK</tspan>  id : UUID</text>
+          <text y="22"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  tenant_id : UUID (CASCADE)</text>
+          <text y="44">email : CITEXT (UNIQUE per tenant)</text>
+          <text y="66">password_hash : VARCHAR(255) (Argon2id)</text>
+          <text y="88">first_name, last_name : VARCHAR(100)</text>
+          <text y="110">role : VARCHAR(50) [SUPER_ADMIN, TENANT_ADMIN...]</text>
+          <text y="132">status : VARCHAR(50) [ACTIVE, SUSPENDED]</text>
+          <text y="154">last_login_at, created_at, updated_at</text>
+        </g>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- TABLE: GATEWAYS                                          -->
+      <!-- ======================================================== -->
+      <g transform="translate(520, 60)" filter="url(#shadow)">
+        <rect width="360" height="240" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+        <rect width="360" height="36" rx="12" fill="#1e293b"/>
+        <rect width="360" height="10" y="26" fill="#1e293b"/>
+        <path d="M 0 36 L 360 36" stroke="#334155" stroke-width="1"/>
+        <text x="16" y="23" fill="#ffffff" font-size="13" font-weight="bold">GATEWAYS (Satellite Daemons)</text>
+        <text x="310" y="23" fill="#10b981" font-size="11" font-weight="bold">RLS</text>
+
+        <g transform="translate(16, 56)" fill="#cbd5e1" font-size="12">
+          <text y="0"><tspan fill="#f59e0b" font-weight="bold">PK</tspan>  id : UUID</text>
+          <text y="22"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  tenant_id : UUID (CASCADE)</text>
+          <text y="44">name : VARCHAR(255)</text>
+          <text y="66">hostname : VARCHAR(255) [FQDN]</text>
+          <text y="88">ip_address : VARCHAR(45) [Private IP]</text>
+          <text y="110">version : VARCHAR(50) [Daemon v1.0.0]</text>
+          <text y="132">status : VARCHAR(50) [ONLINE, OFFLINE]</text>
+          <text y="154">target_types_supported : TEXT[]</text>
+          <text y="176">last_heartbeat_at : TIMESTAMPTZ</text>
+        </g>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- TABLE: DEPLOY_TARGETS                                    -->
+      <!-- ======================================================== -->
+      <g transform="translate(940, 60)" filter="url(#shadow)">
+        <rect width="360" height="240" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+        <rect width="360" height="36" rx="12" fill="#1e293b"/>
+        <rect width="360" height="10" y="26" fill="#1e293b"/>
+        <path d="M 0 36 L 360 36" stroke="#334155" stroke-width="1"/>
+        <text x="16" y="23" fill="#ffffff" font-size="13" font-weight="bold">DEPLOY_TARGETS</text>
+        <text x="310" y="23" fill="#10b981" font-size="11" font-weight="bold">RLS</text>
+
+        <g transform="translate(16, 56)" fill="#cbd5e1" font-size="12">
+          <text y="0"><tspan fill="#f59e0b" font-weight="bold">PK</tspan>  id : UUID</text>
+          <text y="22"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  tenant_id : UUID (CASCADE)</text>
+          <text y="44"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  gateway_id : UUID (CASCADE)</text>
+          <text y="66">name : VARCHAR(255)</text>
+          <text y="88">target_type : [AWS_ACM, AWS_ALB, NGINX...]</text>
+          <text y="110">config : JSONB (Paths, ARNs, Bindings)</text>
+          <text y="132">auto_deploy : BOOLEAN (DEFAULT true)</text>
+          <text y="154">last_deployed_at, created_at, updated_at</text>
+        </g>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- TABLE: CERTIFICATES                                      -->
+      <!-- ======================================================== -->
+      <g transform="translate(730, 340)" filter="url(#shadow)">
+        <rect width="380" height="250" rx="12" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+        <rect width="380" height="36" rx="12" fill="#1e293b"/>
+        <rect width="380" height="10" y="26" fill="#1e293b"/>
+        <path d="M 0 36 L 380 36" stroke="#334155" stroke-width="1"/>
+        <text x="16" y="23" fill="#ffffff" font-size="13" font-weight="bold">CERTIFICATES</text>
+        <text x="330" y="23" fill="#10b981" font-size="11" font-weight="bold">RLS</text>
+
+        <g transform="translate(16, 56)" fill="#cbd5e1" font-size="12">
+          <text y="0"><tspan fill="#f59e0b" font-weight="bold">PK</tspan>  id : UUID</text>
+          <text y="20"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  tenant_id : UUID (CASCADE)</text>
+          <text y="40">domain : VARCHAR(255)</text>
+          <text y="60">sans : TEXT[] (Subject Alternative Names)</text>
+          <text y="80">status : [ACTIVE, EXPIRING_SOON, EXPIRED...]</text>
+          <text y="100">key_algorithm : [RSA_2048, ECDSA_P256...]</text>
+          <text y="120">issuer, serial_number, fingerprint_sha256</text>
+          <text y="140">not_before, not_after : TIMESTAMPTZ</text>
+          <text y="160">auto_renew : BOOLEAN, renew_before_days : INT</text>
+          <text y="180"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  gateway_id : UUID (SET NULL)</text>
+        </g>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- TABLE: AUDIT_LOGS (Append-Only)                          -->
+      <!-- ======================================================== -->
+      <g transform="translate(40, 640)" filter="url(#shadow)">
+        <rect width="400" height="250" rx="12" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
+        <rect width="400" height="36" rx="12" fill="#1e293b"/>
+        <rect width="400" height="10" y="26" fill="#1e293b"/>
+        <path d="M 0 36 L 400 36" stroke="#334155" stroke-width="1"/>
+        <text x="16" y="23" fill="#ffffff" font-size="13" font-weight="bold">AUDIT_LOGS (Append-Only Enforcement)</text>
+        <text x="345" y="23" fill="#10b981" font-size="11" font-weight="bold">RLS</text>
+
+        <g transform="translate(16, 56)" fill="#cbd5e1" font-size="12">
+          <text y="0"><tspan fill="#f59e0b" font-weight="bold">PK</tspan>  id : UUID</text>
+          <text y="20"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  tenant_id : UUID (CASCADE)</text>
+          <text y="40">actor_type : VARCHAR(50) [USER, GATEWAY, SYSTEM]</text>
+          <text y="60">actor_id, actor_email</text>
+          <text y="80">action : VARCHAR(100) [CERT_RENEWED, TENANT_CREATED...]</text>
+          <text y="100">resource_type, resource_id : VARCHAR</text>
+          <text y="120">metadata : JSONB, ip_address, user_agent</text>
+          <text y="140">created_at : TIMESTAMPTZ (Immutable)</text>
+          <text y="170" fill="#34d399" font-size="11" font-style="italic">Protected by DB rules: no UPDATE / no DELETE</text>
+        </g>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- TABLE: GATEWAY_COMMANDS                                  -->
+      <!-- ======================================================== -->
+      <g transform="translate(480, 640)" filter="url(#shadow)">
+        <rect width="380" height="250" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+        <rect width="380" height="36" rx="12" fill="#1e293b"/>
+        <rect width="380" height="10" y="26" fill="#1e293b"/>
+        <path d="M 0 36 L 380 36" stroke="#334155" stroke-width="1"/>
+        <text x="16" y="23" fill="#ffffff" font-size="13" font-weight="bold">GATEWAY_COMMANDS</text>
+        <text x="330" y="23" fill="#10b981" font-size="11" font-weight="bold">RLS</text>
+
+        <g transform="translate(16, 56)" fill="#cbd5e1" font-size="12">
+          <text y="0"><tspan fill="#f59e0b" font-weight="bold">PK</tspan>  id : UUID</text>
+          <text y="20"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  tenant_id : UUID (CASCADE)</text>
+          <text y="40"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  gateway_id : UUID (CASCADE)</text>
+          <text y="60">type : VARCHAR(50) [DISCOVER, DEPLOY, RENEW]</text>
+          <text y="80">status : [PENDING, DISPATCHED, COMPLETED...]</text>
+          <text y="100">payload : JSONB (Typed command params)</text>
+          <text y="120">signature : VARCHAR(512) (HMAC)</text>
+          <text y="140">dispatched_at, completed_at, created_at</text>
+        </g>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- TABLE: DEPLOYMENT_RECORDS                                -->
+      <!-- ======================================================== -->
+      <g transform="translate(900, 640)" filter="url(#shadow)">
+        <rect width="400" height="250" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+        <rect width="400" height="36" rx="12" fill="#1e293b"/>
+        <rect width="400" height="10" y="26" fill="#1e293b"/>
+        <path d="M 0 36 L 400 36" stroke="#334155" stroke-width="1"/>
+        <text x="16" y="23" fill="#ffffff" font-size="13" font-weight="bold">DEPLOYMENT_RECORDS</text>
+        <text x="345" y="23" fill="#10b981" font-size="11" font-weight="bold">RLS</text>
+
+        <g transform="translate(16, 56)" fill="#cbd5e1" font-size="12">
+          <text y="0"><tspan fill="#f59e0b" font-weight="bold">PK</tspan>  id : UUID</text>
+          <text y="20"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  tenant_id : UUID (CASCADE)</text>
+          <text y="40"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  certificate_id : UUID (CASCADE)</text>
+          <text y="60"><tspan fill="#8b5cf6" font-weight="bold">FK</tspan>  deploy_target_id : UUID (CASCADE)</text>
+          <text y="80">action : [INSTALL, RENEW, REMOVE]</text>
+          <text y="100">status : [PENDING, IN_PROGRESS, SUCCESS, FAILED]</text>
+          <text y="120">error_message : TEXT, logs : TEXT[]</text>
+          <text y="140">executed_at, completed_at : TIMESTAMPTZ</text>
+        </g>
+      </g>
+    </svg>
+  </div>
+
+  <script>
+    function downloadSVG() {
+      const svg = document.getElementById("er-svg");
+      const serializer = new XMLSerializer();
+      let source = serializer.serializeToString(svg);
+
+      if(!source.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)){
+        source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+
+      const preface = '<?xml version="1.0" standalone="no"?>\r\n';
+      const svgBlob = new Blob([preface, source], {type:"image/svg+xml;charset=utf-8"});
+      const svgUrl = URL.createObjectURL(svgBlob);
+      const downloadLink = document.createElement("a");
+      downloadLink.href = svgUrl;
+      downloadLink.download = "clm-database-er-diagram.svg";
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    }
+
+    function downloadPNG() {
+      const svg = document.getElementById("er-svg");
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(svg);
+      const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+      const URL = window.URL || window.webkitURL || window;
+      const blobURL = URL.createObjectURL(svgBlob);
+      
+      const image = new Image();
+      image.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 2680; // High-res 2x
+        canvas.height = 1920;
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#0f172a";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        
+        const png = canvas.toDataURL("image/png");
+        const downloadLink = document.createElement("a");
+        downloadLink.href = png;
+        downloadLink.download = "clm-database-er-diagram.png";
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+      };
+      image.src = blobURL;
+    }
+  </script>
+
+</body>
+</html>
+

@@ -32,6 +32,9 @@ export class TenantsRepository {
 
       const row = tenantRes.rows[0];
 
+      // Set the tenant session context so inserting into tenant-scoped RLS tables (users) passes WITH CHECK
+      await client.query('SELECT set_config($1, $2, true);', ['app.tenant_id', row.id]);
+
       // 2. Provision Default Tenant Admin in users table
       await client.query(
         `INSERT INTO users (
