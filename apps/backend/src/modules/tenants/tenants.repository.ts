@@ -56,6 +56,83 @@ export class TenantsRepository {
     });
   }
 
+  async register(
+    dto: {
+      organizationName: string;
+      slug: string;
+      adminEmail: string;
+      adminFirstName: string;
+      adminLastName: string;
+      marketplaceProvider?: string;
+    },
+    passwordHash: string,
+  ): Promise<{ tenant: Tenant; adminUser: any }> {
+    return this.tenantContextService.withSystemContext(async client => {
+      // 1. Insert Tenant with PENDING_APPROVAL status
+      const tenantRes = await client.query(
+        `INSERT INTO tenants (
+          name, slug, status, tier, max_certificates, max_gateways
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *;`,
+        [
+          dto.organizationName,
+          dto.slug,
+          TenantStatus.PENDING_APPROVAL,
+          SubscriptionTier.COMMUNITY,
+          50,
+          2,
+        ],
+      );
+
+      const tenantRow = tenantRes.rows[0];
+
+      // 2. Set context for RLS insert
+      await client.query('SELECT set_config($1, $2, true);', ['app.tenant_id', tenantRow.id]);
+
+      // 3. Create initial Admin user
+      const userRes = await client.query(
+        `INSERT INTO users (
+          tenant_id, email, password_hash, first_name, last_name, role, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *;`,
+        [
+          tenantRow.id,
+          dto.adminEmail.toLowerCase().trim(),
+          passwordHash,
+          dto.adminFirstName,
+          dto.adminLastName,
+          Role.TENANT_ADMIN,
+          UserStatus.ACTIVE,
+        ],
+      );
+
+      const userRow = userRes.rows[0];
+      return {
+        tenant: this.mapRowToTenant(tenantRow),
+        adminUser: {
+          id: userRow.id,
+          tenantId: userRow.tenant_id,
+          email: userRow.email,
+          firstName: userRow.first_name,
+          lastName: userRow.last_name,
+          role: userRow.role,
+          status: userRow.status,
+        },
+      };
+    });
+  }
+
+  async updateStatus(id: string, status: TenantStatus): Promise<Tenant | null> {
+    return this.tenantContextService.withSystemContext(async client => {
+      const res = await client.query(
+        'UPDATE tenants SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *;',
+        [status, id],
+      );
+      if (res.rows.length === 0) return null;
+      return this.mapRowToTenant(res.rows[0]);
+    });
+  }
+
   async findAll(): Promise<Tenant[]> {
     return this.tenantContextService.withSystemContext(async client => {
       const res = await client.query('SELECT * FROM tenants ORDER BY created_at DESC;');

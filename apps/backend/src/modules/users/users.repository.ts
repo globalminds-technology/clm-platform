@@ -68,6 +68,28 @@ export class UsersRepository {
     });
   }
 
+  async updateRole(tenantId: string, id: string, role: Role): Promise<User> {
+    return this.tenantContextService.withTenantContext(tenantId, async client => {
+      const res = await client.query(
+        'UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2 RETURNING *;',
+        [role, id],
+      );
+      if (res.rows.length === 0) throw new Error('User not found');
+      return this.mapRowToUser(res.rows[0]);
+    });
+  }
+
+  async updateStatus(tenantId: string, id: string, status: UserStatus): Promise<User> {
+    return this.tenantContextService.withTenantContext(tenantId, async client => {
+      const res = await client.query(
+        'UPDATE users SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *;',
+        [status, id],
+      );
+      if (res.rows.length === 0) throw new Error('User not found');
+      return this.mapRowToUser(res.rows[0]);
+    });
+  }
+
   async updateLastLogin(tenantId: string, id: string): Promise<void> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
       await client.query('UPDATE users SET last_login_at = NOW() WHERE id = $1;', [id]);

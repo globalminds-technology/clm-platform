@@ -1,5 +1,5 @@
 import { type HttpClient } from '../http';
-import { type User, type AuthSession } from '@clm/shared-types';
+import { type User, type AuthSession, type RegisterTenantRequest } from '@clm/shared-types';
 
 export interface LoginRequest {
   email: string;
@@ -13,6 +13,10 @@ export class AuthEndpoint {
     return this.http.post<AuthSession>('auth/login', data);
   }
 
+  registerTenant(data: RegisterTenantRequest): Promise<any> {
+    return this.http.post<any>('auth/register-tenant', data);
+  }
+
   logout(): Promise<void> {
     return this.http.post<void>('auth/logout');
   }
@@ -21,4 +25,5 @@ export class AuthEndpoint {
     return this.http.get<User>('auth/me');
   }
 }
+
 

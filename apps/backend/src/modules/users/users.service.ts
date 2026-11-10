@@ -1,7 +1,8 @@
 import { Injectable, ConflictException, NotFoundException, Logger } from '@nestjs/common';
 import { UsersRepository, type UserEntityWithPassword } from './users.repository';
 import { CryptoService } from '../../shared/crypto/crypto.service';
-import { type User } from '@clm/shared-types';
+import { MailService } from '../../shared/mail/mail.service';
+import { Role, UserStatus, type User, type InviteMemberRequest } from '@clm/shared-types';
 import { type CreateUserDto } from './dto/create-user.dto';
 
 @Injectable()
@@ -11,7 +12,64 @@ export class UsersService {
   constructor(
     private readonly usersRepository: UsersRepository,
     private readonly cryptoService: CryptoService,
+    private readonly mailService: MailService,
   ) {}
+
+  async invite(tenantId: string, req: InviteMemberRequest, tenantName?: string): Promise<User> {
+    const existing = await this.usersRepository.findByEmail(tenantId, req.email);
+    if (existing) {
+      throw new ConflictException(`User with email '${req.email}' already exists in this tenant.`);
+    }
+
+    // Generate random 12-char secure temporary password
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+    const tempPassword = Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const passwordHash = await this.cryptoService.hashPassword(tempPassword);
+
+    const user = await this.usersRepository.create(
+      tenantId,
+      {
+        email: req.email,
+        password: tempPassword,
+        firstName: req.firstName,
+        lastName: req.lastName,
+        role: req.role,
+      },
+      passwordHash,
+    );
+
+    // Dispatch welcome email asynchronously without blocking transaction
+    this.mailService
+      .sendWelcomeCredentials({
+        email: user.email,
+        name: `${user.firstName} ${user.lastName}`.trim(),
+        role: user.role,
+        tempPassword,
+        tenantName: tenantName || 'Your Organization',
+      })
+      .catch(err => {
+        this.logger.error(`Error sending invitation email to ${user.email}: ${err.message}`);
+      });
+
+    this.logger.log(`Invited member ${user.id} (${user.email}) with role ${user.role}`);
+    return user;
+  }
+
+  async updateRole(tenantId: string, userId: string, role: Role): Promise<User> {
+    try {
+      return await this.usersRepository.updateRole(tenantId, userId, role);
+    } catch {
+      throw new NotFoundException(`User with ID '${userId}' not found.`);
+    }
+  }
+
+  async updateStatus(tenantId: string, userId: string, status: UserStatus): Promise<User> {
+    try {
+      return await this.usersRepository.updateStatus(tenantId, userId, status);
+    } catch {
+      throw new NotFoundException(`User with ID '${userId}' not found.`);
+    }
+  }
 
   async create(tenantId: string, dto: CreateUserDto): Promise<User> {
     const existing = await this.usersRepository.findByEmail(tenantId, dto.email);

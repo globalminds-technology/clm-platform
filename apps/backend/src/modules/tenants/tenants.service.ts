@@ -25,6 +25,36 @@ export class TenantsService {
     return this.tenantsRepository.create(dto, passwordHash);
   }
 
+  async register(dto: {
+    organizationName: string;
+    adminEmail: string;
+    password: string;
+    adminFirstName: string;
+    adminLastName: string;
+    marketplaceProvider?: string;
+  }): Promise<{ tenant: Tenant; adminUser: any }> {
+    const slug = dto.organizationName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || `org-${Date.now()}`;
+
+    const existing = await this.tenantsRepository.findBySlug(slug);
+    if (existing) {
+      throw new ConflictException(`Organization slug '${slug}' is already taken.`);
+    }
+
+    const passwordHash = await this.cryptoService.hashPassword(dto.password);
+    return this.tenantsRepository.register({ ...dto, slug }, passwordHash);
+  }
+
+  async updateStatus(id: string, status: any): Promise<Tenant> {
+    const tenant = await this.tenantsRepository.updateStatus(id, status);
+    if (!tenant) {
+      throw new NotFoundException(`Tenant with ID '${id}' not found`);
+    }
+    return tenant;
+  }
+
   async findAll(): Promise<Tenant[]> {
     return this.tenantsRepository.findAll();
   }

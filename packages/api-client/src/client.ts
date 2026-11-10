@@ -5,6 +5,7 @@ import { TenantsEndpoint } from './endpoints/tenants';
 import { DeploymentsEndpoint } from './endpoints/deployments';
 import { AuditEndpoint } from './endpoints/audit';
 import { AuthEndpoint } from './endpoints/auth';
+import { UsersEndpoint } from './endpoints/users';
 import { MockApiClient } from './mock/mock-client';
 
 export interface ApiClientConfig extends Partial<HttpClientConfig> {
@@ -18,6 +19,7 @@ export interface ApiClient {
   deployments: DeploymentsEndpoint;
   audit: AuditEndpoint;
   auth: AuthEndpoint;
+  users: UsersEndpoint;
   http?: HttpClient;
 }
 
@@ -41,6 +43,7 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
     deployments: new DeploymentsEndpoint(http),
     audit: new AuditEndpoint(http),
     auth: new AuthEndpoint(http),
+    users: new UsersEndpoint(http),
   };
 }
 
