@@ -25,3 +25,4 @@ export class UsersEndpoint {
     return this.http.patch<User>(`users/${id}/status`, { status });
   }
 }
+

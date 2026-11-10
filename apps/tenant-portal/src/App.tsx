@@ -100,44 +100,7 @@ export function App() {
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
 
   // Team & RBAC State
-  const [members, setMembers] = useState<User[]>([
-    {
-      id: 'u0000000-0000-0000-0000-000000000001',
-      tenantId: 'a0000000-0000-0000-0000-000000000001',
-      email: 'alex.vance@acme.com',
-      firstName: 'Alex',
-      lastName: 'Vance',
-      role: Role.TENANT_ADMIN,
-      status: UserStatus.ACTIVE,
-      lastLoginAt: 'Just now',
-      createdAt: '2026-01-10T00:00:00Z',
-      updatedAt: '2026-01-10T00:00:00Z',
-    },
-    {
-      id: 'u0000000-0000-0000-0000-000000000002',
-      tenantId: 'a0000000-0000-0000-0000-000000000001',
-      email: 'sarah.sec@acme.com',
-      firstName: 'Sarah',
-      lastName: 'Connor',
-      role: Role.SECURITY_LEAD,
-      status: UserStatus.ACTIVE,
-      lastLoginAt: '2 hours ago',
-      createdAt: '2026-02-15T00:00:00Z',
-      updatedAt: '2026-02-15T00:00:00Z',
-    },
-    {
-      id: 'u0000000-0000-0000-0000-000000000003',
-      tenantId: 'a0000000-0000-0000-0000-000000000001',
-      email: 'dave.ops@acme.com',
-      firstName: 'David',
-      lastName: 'Miller',
-      role: Role.DEVOPS_ENGINEER,
-      status: UserStatus.ACTIVE,
-      lastLoginAt: 'Yesterday',
-      createdAt: '2026-03-01T00:00:00Z',
-      updatedAt: '2026-03-01T00:00:00Z',
-    },
-  ]);
+  const [members, setMembers] = useState<User[]>([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteFirstName, setInviteFirstName] = useState('');
@@ -255,20 +218,14 @@ export function App() {
     if (!inviteEmail.trim()) return;
     setIsInviting(true);
     try {
-      const newMember: User = {
-        id: `u0000000-0000-0000-0000-${String(members.length + 1).padStart(12, '0')}`,
-        tenantId: currentTenant?.id || 'a0000000-0000-0000-0000-000000000001',
+      const createdUser = await api.users.invite({
         email: inviteEmail.trim(),
         firstName: inviteFirstName.trim() || 'Team',
         lastName: inviteLastName.trim() || 'Member',
         role: inviteRole,
-        status: UserStatus.INVITED,
-        lastLoginAt: 'Never',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      });
 
-      setMembers(prev => [newMember, ...prev]);
+      setMembers(prev => [createdUser, ...prev]);
       setShowInviteModal(false);
       setInviteEmail('');
       setInviteFirstName('');
@@ -276,50 +233,52 @@ export function App() {
 
       toast.success(
         'Invitation Dispatched',
-        `Welcome credentials email with temporary password sent to ${newMember.email}`,
+        `User successfully saved to PostgreSQL database! Temporary credentials dispatched for ${createdUser.email}`,
       );
     } catch (err: any) {
-      toast.error('Invitation Failed', err.message);
+      toast.error('Invitation Failed', err.message || 'Could not save user to PostgreSQL database.');
     } finally {
       setIsInviting(false);
     }
   };
 
-  const handleUpdateRole = (userId: string, newRole: Role) => {
-    setMembers(prev => prev.map(m => (m.id === userId ? { ...m, role: newRole } : m)));
-    toast.info('Role Updated', `Employee role modified to ${newRole}`);
+  const handleUpdateRole = async (userId: string, newRole: Role) => {
+    try {
+      await api.users.updateRole(userId, newRole);
+      setMembers(prev => prev.map(m => (m.id === userId ? { ...m, role: newRole } : m)));
+      toast.info('Role Updated in DB', `User role successfully persisted to ${newRole}`);
+    } catch (err: any) {
+      toast.error('Role Update Failed', err.message || 'Database rejected the role change.');
+    }
   };
 
-  const handleToggleMemberStatus = (userId: string) => {
-    setMembers(prev =>
-      prev.map(m => {
-        if (m.id === userId) {
-          const nextStatus = m.status === UserStatus.ACTIVE ? UserStatus.SUSPENDED : UserStatus.ACTIVE;
-          return { ...m, status: nextStatus };
-        }
-        return m;
-      }),
-    );
-    toast.info('Status Changed', 'Employee active access status has been updated.');
+  const handleToggleMemberStatus = async (userId: string) => {
+    const member = members.find(m => m.id === userId);
+    if (!member) return;
+    const nextStatus = member.status === UserStatus.ACTIVE ? UserStatus.SUSPENDED : UserStatus.ACTIVE;
+    try {
+      await api.users.updateStatus(userId, nextStatus);
+      setMembers(prev =>
+        prev.map(m => (m.id === userId ? { ...m, status: nextStatus } : m)),
+      );
+      toast.info('Status Changed in DB', `User status successfully updated to ${nextStatus}`);
+    } catch (err: any) {
+      toast.error('Status Update Failed', err.message || 'Failed to update user status in database.');
+    }
   };
+
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Fetch live tenant data from PostgreSQL backend
   const fetchTenantData = useCallback(async () => {
     setIsLoading(true);
+    setDbError(null);
     try {
-      const [certList, gwList, auditList] = await Promise.all([
-        api.certificates.list().catch((err: any) => {
-          console.warn('Failed to load certificates from backend:', err);
-          return [];
-        }),
-        api.gateways.list().catch((err: any) => {
-          console.warn('Failed to load gateways from backend:', err);
-          return [];
-        }),
-        api.audit.list().catch((err: any) => {
-          console.warn('Failed to load audit logs from backend:', err);
-          return [];
-        }),
+      const [certList, gwList, auditList, userList] = await Promise.all([
+        api.certificates.list(),
+        api.gateways.list(),
+        api.audit.list(),
+        api.users.list(),
       ]);
 
       setCerts(certList);
@@ -329,8 +288,12 @@ export function App() {
       }
       setGateways(gwList);
       setActivityLogs(auditList);
-    } catch (err) {
+      setMembers(userList);
+    } catch (err: any) {
+      const msg = err?.message || 'Database connection error. Failed to load tenant records from PostgreSQL.';
       console.error('Error fetching tenant data:', err);
+      setDbError(msg);
+      toast.error('PostgreSQL Fetch Error', msg);
     } finally {
       setIsLoading(false);
     }
@@ -353,12 +316,11 @@ export function App() {
         targetTypesSupported: [DeployTargetType.AWS_ACM, DeployTargetType.NGINX],
       });
       setEnrollToken(res.token);
-      toast.info('Gateway Token Ready', 'Generated single-use 24h enrollment token.');
+      toast.info('Gateway Token Ready', 'Generated single-use 24h enrollment token from database.');
     } catch (err: any) {
-      console.warn('Backend gateway enrollment error:', err.message);
-      setEnrollToken(
-        'clm_enroll_YTAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxOmcwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMjsxNzA5NzIzNDU2',
-      );
+      const msg = err.message || 'Database error: Could not enroll gateway';
+      setEnrollToken('');
+      toast.error('Enrollment Failed', msg);
     }
   };
 
@@ -679,6 +641,26 @@ export function App() {
               </div>
             }
           />
+
+          {/* Global Database Error Banner */}
+          {dbError && (
+            <div className="mb-4 mr-3 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-xl flex items-start justify-between shadow-sm">
+              <div className="flex items-start gap-3">
+                <ShieldAlert className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+                <div>
+                  <h4 className="text-sm font-bold text-red-800">Database Connection Error</h4>
+                  <p className="text-xs text-red-600 mt-0.5 font-medium">{dbError}</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Make sure PostgreSQL is running on port 5432 and the backend is active at port 4000.</p>
+                </div>
+              </div>
+              <button
+                onClick={fetchTenantData}
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm shrink-0"
+              >
+                Retry Connection
+              </button>
+            </div>
+          )}
 
           {/* ======================================================================= */}
           {/* GATED STATE: Organization Pending Security Verification Dashboard       */}

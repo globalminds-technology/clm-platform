@@ -46,19 +46,16 @@ export function App() {
   const [customCertQuota, setCustomCertQuota] = useState<number>(500);
   const [customGatewayQuota, setCustomGatewayQuota] = useState<number>(15);
 
+  const [dbError, setDbError] = useState<string | null>(null);
+
   // Fetch real data from PostgreSQL backend
   const fetchAdminData = useCallback(async () => {
     setIsLoading(true);
+    setDbError(null);
     try {
       const [tenantsList, globalAudit] = await Promise.all([
-        api.tenants.list().catch((err: any) => {
-          console.warn('Failed to load tenants from backend:', err);
-          return [];
-        }),
-        api.audit.listGlobal().catch((err: any) => {
-          console.warn('Failed to load audit logs from backend:', err);
-          return [];
-        }),
+        api.tenants.list(),
+        api.audit.listGlobal(),
       ]);
 
       setTenants(tenantsList);
@@ -69,8 +66,11 @@ export function App() {
         }
       }
       setAuditLogs(globalAudit);
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.message || 'Database connection error. Failed to load administrative records from PostgreSQL.';
       console.error('Error fetching admin data:', err);
+      setDbError(msg);
+      toast.error('PostgreSQL Fetch Error', msg);
     } finally {
       setIsLoading(false);
     }
@@ -344,6 +344,26 @@ export function App() {
             </div>
           }
         />
+
+        {/* Global Database Error Banner */}
+        {dbError && (
+          <div className="mb-4 mr-3 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-xl flex items-start justify-between shadow-sm">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+              <div>
+                <h4 className="text-sm font-bold text-red-800">Database Connection Error</h4>
+                <p className="text-xs text-red-600 mt-0.5 font-medium">{dbError}</p>
+                <p className="text-[11px] text-slate-500 mt-1">Make sure PostgreSQL is running on port 5432 and the backend is active at port 4000.</p>
+              </div>
+            </div>
+            <button
+              onClick={fetchAdminData}
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm shrink-0"
+            >
+              Retry Connection
+            </button>
+          </div>
+        )}
 
         {/* Tab 1: Organizations View */}
         {activeTab === 'tenants' && (
