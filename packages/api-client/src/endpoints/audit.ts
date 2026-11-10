@@ -5,7 +5,11 @@ export class AuditEndpoint {
   constructor(private http: HttpClient) {}
 
   list(filters?: AuditFilterParams): Promise<AuditLog[]> {
-    return this.http.get<AuditLog[]>('audit', filters);
+    return this.http.get<AuditLog[]>('audit-logs', filters);
+  }
+
+  listGlobal(limit = 100, offset = 0): Promise<AuditLog[]> {
+    return this.http.get<AuditLog[]>('audit-logs/global', { limit, offset });
   }
 }
 

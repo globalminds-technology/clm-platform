@@ -1,0 +1,10 @@
+{
+  "name": "@clm/gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CLM Platform Satellite Gateway Daemon",
+  "scripts": {
+    "start": "node runner.js"
+  }
+}
+

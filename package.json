@@ -8,7 +8,11 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "clean": "turbo run clean && rimraf node_modules"
+    "clean": "turbo run clean && rimraf node_modules",
+    "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "docker:reset": "docker compose -f infra/docker/docker-compose.yml down -v && docker compose -f infra/docker/docker-compose.yml up -d",
+    "db:init": "docker exec -i clm-postgres psql -U postgres -d clm_db -f /docker-entrypoint-initdb.d/01-init-rls.sql"
   },
   "devDependencies": {
     "turbo": "^2.4.0",

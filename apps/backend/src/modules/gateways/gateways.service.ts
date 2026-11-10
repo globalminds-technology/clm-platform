@@ -1,76 +1,114 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException, Logger } from '@nestjs/common';
 import {
   GatewayStatus,
   DeployTargetType,
   type Gateway,
   type EnrollmentTokenResponse,
+  type GatewayCommand,
 } from '@clm/shared-types';
+import { GatewaysRepository } from './gateways.repository';
+import { CryptoService } from '../../shared/crypto/crypto.service';
 import { type EnrollGatewayDto } from './dto/enroll-gateway.dto';
+import { type GatewayHeartbeatDto } from './dto/gateway-heartbeat.dto';
+import { type GatewayCommandAckDto } from './dto/gateway-command-ack.dto';
 
 @Injectable()
 export class GatewaysService {
-  private gateways: Gateway[] = [
-    {
-      id: 'g0000000-0000-0000-0000-000000000001',
-      tenantId: 'a0000000-0000-0000-0000-000000000001',
-      name: 'us-east-1-prod-gateway',
-      hostname: 'gw-prod-01.acme.internal',
-      ipAddress: '10.0.1.15',
-      version: '1.0.0',
-      status: GatewayStatus.ONLINE,
-      targetTypesSupported: [DeployTargetType.AWS_ACM, DeployTargetType.AWS_ALB, DeployTargetType.NGINX],
-      labels: { env: 'production', region: 'us-east-1' },
-      lastHeartbeatAt: new Date().toISOString(),
-      enrolledAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
+  private readonly logger = new Logger(GatewaysService.name);
 
-  findAll(): Gateway[] {
-    return this.gateways;
+  constructor(
+    private readonly gatewaysRepository: GatewaysRepository,
+    private readonly cryptoService: CryptoService,
+  ) {}
+
+  async findAll(tenantId: string): Promise<Gateway[]> {
+    return this.gatewaysRepository.findAll(tenantId);
   }
 
-  findById(id: string): Gateway {
-    const gw = this.gateways.find(g => g.id === id);
+  async findById(tenantId: string, id: string): Promise<Gateway> {
+    const gw = await this.gatewaysRepository.findById(tenantId, id);
     if (!gw) {
       throw new NotFoundException(`Gateway with ID '${id}' not found`);
     }
     return gw;
   }
 
-  createEnrollmentToken(
+  async createEnrollmentToken(
+    tenantId: string,
     dto: EnrollGatewayDto,
-    tenantId = 'a0000000-0000-0000-0000-000000000001',
-  ): EnrollmentTokenResponse {
-    const newGatewayId = `g${Date.now()}`;
-    const token = `clm_enroll_${Buffer.from(`${tenantId}:${newGatewayId}:${Date.now()}`).toString('base64url')}`;
+  ): Promise<EnrollmentTokenResponse> {
+    const rawToken = this.cryptoService.generateSecureToken(32);
+    const tokenHash = this.cryptoService.signHmac(rawToken, 'clm-token-salt');
+    const expiresAt = new Date(Date.now() + 24 * 3600000); // 24 hours
 
-    const newGateway: Gateway = {
-      id: newGatewayId,
-      tenantId,
+    const createdGateway = await this.gatewaysRepository.create(tenantId, {
       name: dto.name,
-      hostname: 'pending-connection',
-      ipAddress: '0.0.0.0',
-      version: 'unknown',
-      status: GatewayStatus.ENROLLING,
-      targetTypesSupported: dto.targetTypesSupported ?? [DeployTargetType.AWS_ACM],
-      labels: dto.labels ?? {},
-      lastHeartbeatAt: null,
-      enrolledAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+      targetTypesSupported: dto.targetTypesSupported || [DeployTargetType.AWS_ACM],
+      labels: dto.labels,
+    });
+    const gatewayId = createdGateway.id;
 
-    this.gateways.push(newGateway);
+    await this.gatewaysRepository.saveEnrollmentToken(
+      tenantId,
+      gatewayId,
+      tokenHash,
+      expiresAt,
+    );
+
+    const encodedToken = Buffer.from(`${tenantId}:${gatewayId}:${rawToken}`).toString('base64url');
 
     return {
-      tokenId: `tok_${Date.now()}`,
-      gatewayId: newGatewayId,
-      token,
-      installCommand: `curl -sSL https://get.clm-platform.com/install.sh | bash -s -- --token ${token}`,
-      expiresAt: new Date(Date.now() + 24 * 3600000).toISOString(),
+      tokenId: `tok_${this.cryptoService.generateSecureToken(8)}`,
+      gatewayId,
+      token: `clm_enroll_${encodedToken}`,
+      installCommand: `curl -sSL https://get.clm-platform.com/install.sh | bash -s -- --token clm_enroll_${encodedToken}`,
+      expiresAt: expiresAt.toISOString(),
     };
   }
-}
 
+  async enrollWithToken(
+    tokenString: string,
+    hostname: string,
+    ipAddress: string,
+    version = '1.0.0',
+  ): Promise<{ gatewayId: string; tenantId: string; status: GatewayStatus }> {
+    const stripped = tokenString.replace(/^clm_enroll_/, '');
+    const decoded = Buffer.from(stripped, 'base64url').toString('utf8');
+    const [tenantId, gatewayId, rawToken] = decoded.split(':');
+
+    if (!tenantId || !gatewayId || !rawToken) {
+      throw new UnauthorizedException('Invalid enrollment token format');
+    }
+
+    const tokenHash = this.cryptoService.signHmac(rawToken, 'clm-token-salt');
+
+    const tokenRecord = await this.gatewaysRepository.findAndConsumeEnrollmentToken(tokenHash);
+    if (!tokenRecord) {
+      throw new UnauthorizedException('Token is either expired or already consumed');
+    }
+
+    await this.gatewaysRepository.activateGateway(tokenRecord.gatewayId, hostname, ipAddress, version);
+    this.logger.log(`Gateway activated: ${tokenRecord.gatewayId} (${hostname}) for tenant ${tokenRecord.tenantId}`);
+
+    return {
+      gatewayId: tokenRecord.gatewayId,
+      tenantId: tokenRecord.tenantId,
+      status: GatewayStatus.ONLINE,
+    };
+  }
+
+  async processHeartbeat(dto: GatewayHeartbeatDto): Promise<{ acknowledged: boolean; commands: GatewayCommand[] }> {
+    await this.gatewaysRepository.updateHeartbeat(dto.gatewayId, dto.ipAddress, dto.version, dto.metrics);
+    const pendingCommands = await this.gatewaysRepository.findPendingCommands(dto.gatewayId);
+    return {
+      acknowledged: true,
+      commands: pendingCommands,
+    };
+  }
+
+  async acknowledgeCommand(dto: GatewayCommandAckDto): Promise<{ success: boolean }> {
+    await this.gatewaysRepository.updateCommandStatus(dto.commandId, dto.status, dto.errorMessage);
+    this.logger.log(`Command ${dto.commandId} acknowledged by gateway ${dto.gatewayId} with status ${dto.status}`);
+    return { success: true };
+  }
+}
