@@ -18,6 +18,13 @@ import {
   Eye,
   Calendar,
   Layers,
+  UserPlus,
+  Shield,
+  Clock,
+  LogOut,
+  LogIn,
+  AlertCircle,
+  Building,
 } from 'lucide-react';
 import {
   CertStatus,
@@ -25,9 +32,15 @@ import {
   GatewayStatus,
   ValidationMethod,
   DeployTargetType,
+  Role,
+  UserStatus,
+  TenantStatus,
+  CloudMarketplace,
   type Certificate,
   type Gateway,
   type AuditLog,
+  type User,
+  type Tenant,
 } from '@clm/shared-types';
 import { Sidebar, TopHeader, Modal, StatusBadge, Drawer, ConfirmDialog, Toaster, toast } from '@clm/ui';
 import { createApiClient } from '@clm/api-client';
@@ -41,12 +54,104 @@ const api = createApiClient({
 });
 
 export function App() {
+  // Session & Tenant Verification State
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('clm_tenant_user');
+    return saved ? JSON.parse(saved) : {
+      id: 'u0000000-0000-0000-0000-000000000001',
+      tenantId: 'a0000000-0000-0000-0000-000000000001',
+      email: 'devops@acme.com',
+      firstName: 'Alex',
+      lastName: 'Vance',
+      role: Role.TENANT_ADMIN,
+      status: UserStatus.ACTIVE,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  const [currentTenant, setCurrentTenant] = useState<Tenant | null>(() => {
+    const saved = localStorage.getItem('clm_tenant_org');
+    return saved ? JSON.parse(saved) : {
+      id: 'a0000000-0000-0000-0000-000000000001',
+      name: 'Acme Global Corp',
+      slug: 'acme-global',
+      status: TenantStatus.ACTIVE,
+      tier: 'ENTERPRISE' as any,
+      maxCertificates: 1000,
+      maxGateways: 25,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  // Auth Modals
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authOrgName, setAuthOrgName] = useState('');
+  const [authFirstName, setAuthFirstName] = useState('');
+  const [authLastName, setAuthLastName] = useState('');
+  const [authMarketplace, setAuthMarketplace] = useState<CloudMarketplace>(CloudMarketplace.DIRECT);
+  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+
+  // Review Status Gating Polling
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+
+  // Team & RBAC State
+  const [members, setMembers] = useState<User[]>([
+    {
+      id: 'u0000000-0000-0000-0000-000000000001',
+      tenantId: 'a0000000-0000-0000-0000-000000000001',
+      email: 'alex.vance@acme.com',
+      firstName: 'Alex',
+      lastName: 'Vance',
+      role: Role.TENANT_ADMIN,
+      status: UserStatus.ACTIVE,
+      lastLoginAt: 'Just now',
+      createdAt: '2026-01-10T00:00:00Z',
+      updatedAt: '2026-01-10T00:00:00Z',
+    },
+    {
+      id: 'u0000000-0000-0000-0000-000000000002',
+      tenantId: 'a0000000-0000-0000-0000-000000000001',
+      email: 'sarah.sec@acme.com',
+      firstName: 'Sarah',
+      lastName: 'Connor',
+      role: Role.SECURITY_LEAD,
+      status: UserStatus.ACTIVE,
+      lastLoginAt: '2 hours ago',
+      createdAt: '2026-02-15T00:00:00Z',
+      updatedAt: '2026-02-15T00:00:00Z',
+    },
+    {
+      id: 'u0000000-0000-0000-0000-000000000003',
+      tenantId: 'a0000000-0000-0000-0000-000000000001',
+      email: 'dave.ops@acme.com',
+      firstName: 'David',
+      lastName: 'Miller',
+      role: Role.DEVOPS_ENGINEER,
+      status: UserStatus.ACTIVE,
+      lastLoginAt: 'Yesterday',
+      createdAt: '2026-03-01T00:00:00Z',
+      updatedAt: '2026-03-01T00:00:00Z',
+    },
+  ]);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteFirstName, setInviteFirstName] = useState('');
+  const [inviteLastName, setInviteLastName] = useState('');
+  const [inviteRole, setInviteRole] = useState<Role>(Role.DEVOPS_ENGINEER);
+  const [isInviting, setIsInviting] = useState(false);
+
   const [certs, setCerts] = useState<Certificate[]>([]);
   const [gateways, setGateways] = useState<Gateway[]>([]);
   const [activityLogs, setActivityLogs] = useState<AuditLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCertId, setSelectedCertId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'certificates' | 'gateways' | 'audit' | 'alerts' | 'settings'>('certificates');
+  const [settingsSubTab, setSettingsSubTab] = useState<'general' | 'team'>('general');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXPIRING' | 'CRITICAL'>('ALL');
   const [targetFilter, setTargetFilter] = useState<'ALL' | 'AWS_ACM' | 'AWS_ALB' | 'NGINX'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -67,6 +172,136 @@ export function App() {
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
   const [enrollToken, setEnrollToken] = useState<string>('');
+
+  // Check status polling for PENDING_APPROVAL gating
+  const checkTenantVerificationStatus = useCallback(async (manual = false) => {
+    if (manual) setIsCheckingStatus(true);
+    try {
+      const res = await api.tenants.getMyStatus();
+      if (res && res.status) {
+        if (currentTenant && currentTenant.status !== (res.status as TenantStatus)) {
+          const updated = { ...currentTenant, status: res.status as TenantStatus };
+          setCurrentTenant(updated);
+          localStorage.setItem('clm_tenant_org', JSON.stringify(updated));
+          if (res.status === TenantStatus.ACTIVE) {
+            toast.success('Account Approved!', 'Your organization has been verified and active access unlocked.');
+          }
+        }
+      }
+    } catch {
+      // Mock / Offline fallback status
+    } finally {
+      if (manual) setIsCheckingStatus(false);
+    }
+  }, [currentTenant]);
+
+  useEffect(() => {
+    if (currentTenant?.status === TenantStatus.PENDING_APPROVAL) {
+      const interval = setInterval(() => {
+        checkTenantVerificationStatus(false);
+      }, 15000);
+      return () => clearInterval(interval);
+    }
+    return undefined;
+  }, [currentTenant?.status, checkTenantVerificationStatus]);
+
+  // Auth Handlers
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingAuth(true);
+    try {
+      if (authMode === 'signin') {
+        const res = await api.auth.login({ email: authEmail, password: authPassword });
+        setCurrentUser(res.user);
+        localStorage.setItem('clm_tenant_user', JSON.stringify(res.user));
+        toast.success('Welcome Back', `Logged in as ${res.user.email}`);
+        setShowAuthModal(false);
+      } else {
+        const res = await api.auth.registerTenant({
+          organizationName: authOrgName,
+          adminEmail: authEmail,
+          password: authPassword,
+          adminFirstName: authFirstName || 'Admin',
+          adminLastName: authLastName || 'User',
+          marketplaceProvider: authMarketplace,
+        });
+
+        setCurrentTenant(res.tenant);
+        setCurrentUser(res.user);
+        localStorage.setItem('clm_tenant_org', JSON.stringify(res.tenant));
+        localStorage.setItem('clm_tenant_user', JSON.stringify(res.user));
+
+        toast.success('Organization Created', 'Welcome to CLM! Your account is submitted for security verification.');
+        setShowAuthModal(false);
+      }
+    } catch (err: any) {
+      toast.error('Authentication Failed', err.message || 'Please check your inputs and try again.');
+    } finally {
+      setIsSubmittingAuth(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('clm_tenant_user');
+    localStorage.removeItem('clm_tenant_org');
+    setCurrentUser(null);
+    setCurrentTenant(null);
+    toast.info('Logged Out', 'You have been safely signed out.');
+  };
+
+  // Team Member Management Handlers
+  const handleInviteMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+    setIsInviting(true);
+    try {
+      const newMember: User = {
+        id: `u0000000-0000-0000-0000-${String(members.length + 1).padStart(12, '0')}`,
+        tenantId: currentTenant?.id || 'a0000000-0000-0000-0000-000000000001',
+        email: inviteEmail.trim(),
+        firstName: inviteFirstName.trim() || 'Team',
+        lastName: inviteLastName.trim() || 'Member',
+        role: inviteRole,
+        status: UserStatus.INVITED,
+        lastLoginAt: 'Never',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      setMembers(prev => [newMember, ...prev]);
+      setShowInviteModal(false);
+      setInviteEmail('');
+      setInviteFirstName('');
+      setInviteLastName('');
+
+      toast.success(
+        'Invitation Dispatched',
+        `Welcome credentials email with temporary password sent to ${newMember.email}`,
+      );
+    } catch (err: any) {
+      toast.error('Invitation Failed', err.message);
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
+  const handleUpdateRole = (userId: string, newRole: Role) => {
+    setMembers(prev => prev.map(m => (m.id === userId ? { ...m, role: newRole } : m)));
+    toast.info('Role Updated', `Employee role modified to ${newRole}`);
+  };
+
+  const handleToggleMemberStatus = (userId: string) => {
+    setMembers(prev =>
+      prev.map(m => {
+        if (m.id === userId) {
+          const nextStatus = m.status === UserStatus.ACTIVE ? UserStatus.SUSPENDED : UserStatus.ACTIVE;
+          return { ...m, status: nextStatus };
+        }
+        return m;
+      }),
+    );
+    toast.info('Status Changed', 'Employee active access status has been updated.');
+  };
 
   // Fetch live tenant data from PostgreSQL backend
   const fetchTenantData = useCallback(async () => {
@@ -345,13 +580,13 @@ export function App() {
         <Sidebar
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          brandName="CertFlow"
+          brandName={currentTenant?.name || 'CertFlow'}
           brandIcon={<ShieldCheck className="h-6 w-6" />}
           items={navItems}
           user={{
-            name: 'Alice Vance',
-            role: 'Tenant Admin',
-            initials: 'AV',
+            name: currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : 'Guest User',
+            role: currentUser?.role || 'Sign In',
+            initials: currentUser ? `${currentUser.firstName[0]}${currentUser.lastName[0]}`.toUpperCase() : 'GU',
           }}
         />
 
@@ -391,9 +626,30 @@ export function App() {
             onSearchChange={setSearchTerm}
             searchPlaceholder="Search certificates, domains, issuers..."
             unreadNotifications={criticalCount > 0}
-            userInitials="AV"
+            userInitials={currentUser ? `${currentUser.firstName[0]}${currentUser.lastName[0]}`.toUpperCase() : 'GU'}
             actionButton={
               <div className="flex items-center gap-2">
+                {currentUser ? (
+                  <button
+                    onClick={handleLogout}
+                    title="Sign Out"
+                    className="px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors shadow-sm"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Logout</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setAuthMode('signin');
+                      setShowAuthModal(true);
+                    }}
+                    className="primary-gradient-btn px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20"
+                  >
+                    <LogIn className="h-3.5 w-3.5" />
+                    <span>Sign In</span>
+                  </button>
+                )}
                 <button
                   onClick={handleManualSync}
                   disabled={isLoading}
@@ -423,6 +679,93 @@ export function App() {
               </div>
             }
           />
+
+          {/* ======================================================================= */}
+          {/* GATED STATE: Organization Pending Security Verification Dashboard       */}
+          {/* ======================================================================= */}
+          {currentTenant?.status === TenantStatus.PENDING_APPROVAL ? (
+            <div className="bg-white rounded-[28px] soft-card p-8 mr-3 mb-6 space-y-6">
+              <div className="flex items-start justify-between pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold border border-amber-100">
+                    <Clock className="h-6 w-6 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-black text-[#0F172A]">{currentTenant.name}</h3>
+                      <StatusBadge variant="warning" label="Under Security Review" />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Your organization application has been submitted and is currently in verification by CLM platform security engineers.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => checkTenantVerificationStatus(true)}
+                  disabled={isCheckingStatus}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-2 transition-all shadow-sm"
+                >
+                  <RefreshCw className={`h-4 w-4 text-blue-600 ${isCheckingStatus ? 'animate-spin' : ''}`} />
+                  <span>Check Status</span>
+                </button>
+              </div>
+
+              {/* 3-Step Verification Stepper */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-emerald-700 uppercase">Step 1</span>
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  </div>
+                  <h4 className="font-extrabold text-xs text-emerald-950">Workspace Registration</h4>
+                  <p className="text-[11px] text-emerald-800">
+                    Organization account and administrator credentials provisioned.
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-amber-700 uppercase">Step 2</span>
+                    <RefreshCw className="h-4 w-4 text-amber-600 animate-spin" />
+                  </div>
+                  <h4 className="font-extrabold text-xs text-amber-950">Domain & Compliance Review</h4>
+                  <p className="text-[11px] text-amber-800">
+                    Validating cloud marketplace billing linkage and PKI compliance.
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/60 space-y-2 opacity-60">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase">Step 3</span>
+                    <Lock className="h-4 w-4 text-slate-400" />
+                  </div>
+                  <h4 className="font-extrabold text-xs text-slate-700">Issuance & Gateway Privileges</h4>
+                  <p className="text-[11px] text-slate-500">
+                    Live ACME issuance, ALB integration, and gateway tunnels unlocked upon approval.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-slate-100 flex items-center justify-between text-xs text-slate-600">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-blue-600" />
+                  <span>Estimated verification turnaround: <strong>15–30 minutes</strong></span>
+                </div>
+                <span className="text-[11px] text-slate-400">Auto-refreshing status every 15s</span>
+              </div>
+            </div>
+          ) : currentTenant?.status === TenantStatus.REJECTED ? (
+            <div className="bg-white rounded-[28px] soft-card p-8 mr-3 mb-6 space-y-4 text-center">
+              <div className="h-12 w-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <h3 className="text-base font-extrabold text-rose-700">Registration Verification Declined</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Your organization verification could not be approved at this time. Please contact compliance@clm-platform.com for assistance.
+              </p>
+            </div>
+          ) : null}
 
           {/* ======================================================================= */}
           {/* 3. CERTIFICATES TAB (2-Column Master-Detail Layout)                     */}
@@ -913,18 +1256,170 @@ export function App() {
           )}
 
           {/* ======================================================================= */}
-          {/* 6. ALERTS & SETTINGS TABS                                               */}
+          {/* 6. SETTINGS & TEAM RBAC MANAGEMENT TAB                                  */}
           {/* ======================================================================= */}
-          {(activeTab === 'alerts' || activeTab === 'settings') && (
+          {activeTab === 'settings' && (
+            <div className="bg-white rounded-[28px] soft-card p-6 mr-3 mb-6 space-y-6">
+              {/* Header and Sub-Tab Switcher */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0F172A] tracking-tight">Tenant Settings</h3>
+                  <p className="text-xs text-slate-500">Configure team access, RBAC permissions, and organization security.</p>
+                </div>
+                <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#F8FAFC] border border-slate-100">
+                  <button
+                    onClick={() => setSettingsSubTab('general')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      settingsSubTab === 'general' ? 'pill-tab-active' : 'pill-tab-inactive'
+                    }`}
+                  >
+                    General
+                  </button>
+                  <button
+                    onClick={() => setSettingsSubTab('team')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      settingsSubTab === 'team' ? 'pill-tab-active' : 'pill-tab-inactive'
+                    }`}
+                  >
+                    Team & RBAC ({members.length})
+                  </button>
+                </div>
+              </div>
+
+              {settingsSubTab === 'general' ? (
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-slate-100 space-y-2">
+                    <div className="font-bold text-slate-800 flex items-center gap-2">
+                      <Building className="h-4 w-4 text-blue-600" />
+                      <span>Workspace Organization</span>
+                    </div>
+                    <div className="space-y-1.5 text-slate-600 pt-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Company Name</span>
+                        <span className="font-semibold">{currentTenant?.name}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Workspace Slug</span>
+                        <span className="font-mono">{currentTenant?.slug}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Subscription Tier</span>
+                        <span className="font-bold text-blue-600">{currentTenant?.tier}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-slate-100 space-y-2">
+                    <div className="font-bold text-slate-800 flex items-center gap-2">
+                      <Shield className="h-4 w-4 text-emerald-600" />
+                      <span>Security & ACME Defaults</span>
+                    </div>
+                    <div className="space-y-1.5 text-slate-600 pt-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Auto-Renewal Window</span>
+                        <span className="font-semibold">30 Days Before Expiry</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Enforcement</span>
+                        <span className="font-semibold text-emerald-600">Strict Zero-Trust mTLS</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* TEAM & RBAC MANAGEMENT TABLE */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-extrabold text-[#0F172A] uppercase tracking-wider">
+                        Invited Employees & Role Privileges
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        Granular RBAC role delegation with Argon2id password hash protection.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => setShowInviteModal(true)}
+                      className="primary-gradient-btn px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      <span>Invite Member</span>
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-[#F8FAFC] text-slate-500 font-bold border-b border-slate-100">
+                        <tr>
+                          <th className="py-3 px-4">Member Name</th>
+                          <th className="py-3 px-4">Work Email</th>
+                          <th className="py-3 px-4">Role Privileges</th>
+                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4">Last Active</th>
+                          <th className="py-3 px-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 bg-white">
+                        {members.map(member => (
+                          <tr key={member.id} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="py-3 px-4 font-bold text-slate-900">
+                              {member.firstName} {member.lastName}
+                            </td>
+                            <td className="py-3 px-4 font-mono text-slate-600">{member.email}</td>
+                            <td className="py-3 px-4">
+                              <select
+                                value={member.role}
+                                onChange={e => handleUpdateRole(member.id, e.target.value as Role)}
+                                className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-bold text-slate-800 bg-[#F8FAFC] focus:outline-none focus:border-blue-600"
+                              >
+                                <option value={Role.TENANT_ADMIN}>Tenant Admin (Full Access)</option>
+                                <option value={Role.SECURITY_LEAD}>Security Lead (Issuance/Revoke)</option>
+                                <option value={Role.DEVOPS_ENGINEER}>DevOps Engineer (Deploy & Gateways)</option>
+                                <option value={Role.AUDITOR}>Auditor (Read & Compliance)</option>
+                                <option value={Role.READ_ONLY}>Read Only</option>
+                              </select>
+                            </td>
+                            <td className="py-3 px-4">
+                              <StatusBadge
+                                variant={member.status === UserStatus.ACTIVE ? 'healthy' : 'warning'}
+                                label={member.status}
+                              />
+                            </td>
+                            <td className="py-3 px-4 text-slate-400 text-[11px]">{member.lastLoginAt || 'Never'}</td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                onClick={() => handleToggleMemberStatus(member.id)}
+                                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-colors ${
+                                  member.status === UserStatus.ACTIVE
+                                    ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100'
+                                    : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
+                                }`}
+                              >
+                                {member.status === UserStatus.ACTIVE ? 'Deactivate' : 'Activate'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ======================================================================= */}
+          {/* ALERTS TAB                                                              */}
+          {/* ======================================================================= */}
+          {activeTab === 'alerts' && (
             <div className="bg-white rounded-[28px] soft-card p-8 mr-3 mb-6 text-center space-y-3">
               <div className="h-12 w-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
-                {activeTab === 'alerts' ? <Bell className="h-6 w-6" /> : <Settings className="h-6 w-6" />}
+                <Bell className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-extrabold text-[#0F172A] capitalize">
-                {activeTab} Management
-              </h3>
+              <h3 className="text-base font-extrabold text-[#0F172A]">Security Alerts & Notifications</h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Configure alert thresholds, webhooks (Slack/Teams), and CA provider credentials for automated ACME issuance.
+                Configure automated threshold triggers, Webhooks (Slack/Teams), and CA provider credentials for zero-downtime certificate renewals.
               </p>
             </div>
           )}
@@ -1184,6 +1679,235 @@ ${selectedCert.fingerprintSha256.substring(0, 48)}
           confirmLabel="Revoke & Delete"
           variant="danger"
         />
+
+        {/* Modal: Invite Team Member */}
+        <Modal
+          isOpen={showInviteModal}
+          onClose={() => setShowInviteModal(false)}
+          title="Invite Team Member"
+          description="Grant team access with granular RBAC permissions. Temporary credentials will be sent automatically via email."
+          maxWidth="md"
+        >
+          <form onSubmit={handleInviteMember} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">First Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Sarah"
+                  value={inviteFirstName}
+                  onChange={e => setInviteFirstName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Last Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Connor"
+                  value={inviteLastName}
+                  onChange={e => setInviteLastName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Work Email</label>
+              <input
+                type="email"
+                required
+                placeholder="sarah@yourcompany.com"
+                value={inviteEmail}
+                onChange={e => setInviteEmail(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Assigned Role</label>
+              <select
+                value={inviteRole}
+                onChange={e => setInviteRole(e.target.value as Role)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs bg-white"
+              >
+                <option value={Role.TENANT_ADMIN}>Tenant Admin — Full organizational configuration & member management</option>
+                <option value={Role.SECURITY_LEAD}>Security Lead — Issue, revoke, and approve ACME certificate requests</option>
+                <option value={Role.DEVOPS_ENGINEER}>DevOps Engineer — Enroll gateways, configure targets, trigger deployments</option>
+                <option value={Role.AUDITOR}>Auditor — Read-only access to compliance logs & certificate ledger</option>
+                <option value={Role.READ_ONLY}>Read Only — Basic inventory visualization</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowInviteModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isInviting}
+                className="primary-gradient-btn px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5"
+              >
+                {isInviting && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                <span>Send Invitation Email</span>
+              </button>
+            </div>
+          </form>
+        </Modal>
+
+        {/* Modal: Dynamic Authentication (Sign In & Self-Serve Sign Up) */}
+        <Modal
+          isOpen={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+          title={authMode === 'signin' ? 'Sign In to Your Workspace' : 'Create Organization Workspace'}
+          description={
+            authMode === 'signin'
+              ? 'Enter your work credentials to access your tenant certificate control plane.'
+              : 'Register your company for automated enterprise certificate lifecycle management.'
+          }
+          maxWidth="md"
+        >
+          <div className="space-y-4">
+            <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#F8FAFC] border border-slate-100 mb-2">
+              <button
+                type="button"
+                onClick={() => setAuthMode('signin')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  authMode === 'signin' ? 'pill-tab-active' : 'pill-tab-inactive'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthMode('signup')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  authMode === 'signup' ? 'pill-tab-active' : 'pill-tab-inactive'
+                }`}
+              >
+                Register Organization
+              </button>
+            </div>
+
+            <form onSubmit={handleAuthSubmit} className="space-y-3.5">
+              {authMode === 'signup' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Organization Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Acme Global Inc"
+                      value={authOrgName}
+                      onChange={e => setAuthOrgName(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        First Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Alex"
+                        value={authFirstName}
+                        onChange={e => setAuthFirstName(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Last Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Vance"
+                        value={authLastName}
+                        onChange={e => setAuthLastName(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Cloud Marketplace Source
+                    </label>
+                    <select
+                      value={authMarketplace}
+                      onChange={e => setAuthMarketplace(e.target.value as CloudMarketplace)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 bg-white"
+                    >
+                      <option value={CloudMarketplace.DIRECT}>Direct Enterprise SaaS</option>
+                      <option value={CloudMarketplace.AWS_MARKETPLACE}>AWS Marketplace</option>
+                      <option value={CloudMarketplace.AZURE_MARKETPLACE}>Microsoft Azure Marketplace</option>
+                      <option value={CloudMarketplace.GCP_MARKETPLACE}>Google Cloud Marketplace</option>
+                      <option value={CloudMarketplace.ZOHO_MARKETPLACE}>Zoho Marketplace</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Work Email *
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="admin@yourcompany.com"
+                  value={authEmail}
+                  onChange={e => setAuthEmail(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••••••"
+                  value={authPassword}
+                  onChange={e => setAuthPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAuthModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-900"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingAuth}
+                  className="primary-gradient-btn px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5"
+                >
+                  {isSubmittingAuth && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{authMode === 'signin' ? 'Sign In' : 'Create Account'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </Modal>
       </div>
       );
 }

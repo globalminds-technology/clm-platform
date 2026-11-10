@@ -1,5 +1,7 @@
 export enum TenantStatus {
   ACTIVE = 'ACTIVE',
+  PENDING_APPROVAL = 'PENDING_APPROVAL',
+  REJECTED = 'REJECTED',
   TRIAL = 'TRIAL',
   SUSPENDED = 'SUSPENDED',
   DECOMMISSIONED = 'DECOMMISSIONED',
@@ -12,12 +14,33 @@ export enum SubscriptionTier {
   AWS_MARKETPLACE_PAYGO = 'AWS_MARKETPLACE_PAYGO',
 }
 
+export enum CloudMarketplace {
+  DIRECT = 'DIRECT',
+  AWS_MARKETPLACE = 'AWS_MARKETPLACE',
+  AZURE_MARKETPLACE = 'AZURE_MARKETPLACE',
+  GCP_MARKETPLACE = 'GCP_MARKETPLACE',
+  ZOHO_MARKETPLACE = 'ZOHO_MARKETPLACE',
+}
+
+export interface PlanDefinition {
+  id: string;
+  tier: SubscriptionTier;
+  name: string;
+  maxCertificates: number;
+  maxGateways: number;
+  priceMonthly: number;
+  features: string[];
+  effectiveDate?: string;
+}
+
 export interface Tenant {
   id: string;
   name: string;
   slug: string;
   status: TenantStatus;
   tier: SubscriptionTier;
+  marketplaceProvider?: CloudMarketplace;
+  effectivePlanDate?: string;
   maxCertificates: number;
   maxGateways: number;
   awsAccountId?: string | null;
@@ -39,17 +62,28 @@ export interface CreateTenantRequest {
   adminEmail: string;
   adminFirstName: string;
   adminLastName: string;
+  marketplaceProvider?: CloudMarketplace;
   awsAccountId?: string;
   awsCustomerIdentifier?: string;
   maxCertificates?: number;
   maxGateways?: number;
 }
 
+export interface RegisterTenantRequest {
+  organizationName: string;
+  adminEmail: string;
+  password: string;
+  adminFirstName: string;
+  adminLastName: string;
+  marketplaceProvider?: CloudMarketplace;
+}
+
 export interface UpdateTenantRequest {
   name?: string;
   status?: TenantStatus;
   tier?: SubscriptionTier;
+  marketplaceProvider?: CloudMarketplace;
+  effectivePlanDate?: string;
   maxCertificates?: number;
   maxGateways?: number;
 }
-

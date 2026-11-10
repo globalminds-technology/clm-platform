@@ -17,11 +17,54 @@ import { LoginDto } from './dto/login.dto';
 import { Public } from './public.decorator';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
+import { TenantsService } from '../../modules/tenants/tenants.service';
+import { type RegisterTenantRequest } from '@clm/shared-types';
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly tenantsService: TenantsService,
+  ) {}
+
+  @Public()
+  @Post('register-tenant')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Self-serve tenant signup with PENDING_APPROVAL gating' })
+  @ApiResponse({ status: 201, description: 'Organization created and authenticated' })
+  async registerTenant(
+    @Body() dto: RegisterTenantRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { tenant, adminUser } = await this.tenantsService.register(dto);
+    const loginResult = await this.authService.login({
+      email: dto.adminEmail,
+      password: dto.password,
+    });
+
+    res.cookie('clm_refresh_token', loginResult.tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/api/v1/auth',
+    });
+
+    res.cookie('clm_access_token', loginResult.tokens.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 15 * 60 * 1000,
+      path: '/',
+    });
+
+    return {
+      tenant,
+      user: adminUser,
+      tokens: loginResult.tokens,
+    };
+  }
 
   @Public()
   @Post('login')

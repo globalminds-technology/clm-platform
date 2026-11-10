@@ -8,6 +8,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
 import { UsersModule } from '../../modules/users/users.module';
+import { TenantsModule } from '../../modules/tenants/tenants.module';
 import { CryptoModule } from '../crypto/crypto.module';
 
 @Module({
@@ -27,6 +28,7 @@ import { CryptoModule } from '../crypto/crypto.module';
       }),
     }),
     UsersModule,
+    TenantsModule,
     CryptoModule,
   ],
   controllers: [AuthController],

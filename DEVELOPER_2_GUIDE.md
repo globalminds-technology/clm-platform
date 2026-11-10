@@ -98,7 +98,7 @@ You own maintaining and extending `packages/ui`:
 - [x] **`TopHeader`**: Clean navbar with search input, unread notification indicator, profile capsule, and primary action button.
 - [x] **`Modal`**: Dialog with backdrop blur, rounded soft-card styling, title, and close button.
 - [x] **`StatusBadge`**: Pill badge with indicator dot (`healthy`, `warning`, `critical`, `default`).
-- [x] **Next Components Added**:
+- [ ] **Next Components to Add**:
   - `DataTable`: Interactive table with sortable columns, row selection checkboxes, and pagination.
   - `Drawer` / `Sheet`: Slide-over drawer for deep inspection of certificate chains, PEM details, and SANs.
   - `ConfirmDialog`: Reusable confirmation modal for revoking certificates or deleting tenants.
@@ -121,7 +121,7 @@ Target Audience: Customer DevOps, Platform, and Security Engineers.
   - `+ Enroll New Gateway` modal with single-use enrollment command and one-click copy button (`curl -sSL ...`).
 - [x] **Activity & Audit Ledger (`Activity Logs`)**:
   - Chronological timeline of certificate renewals, gateway heartbeats, and user actions.
-- [x] **Next Features for Developer 2**:
+- [ ] **Next Features for Developer 2**:
   - Add visual certificate expiry histogram / calendar view on Dashboard.
   - Add filter by Gateway target (e.g. filter certificates deployed to AWS ALB vs NGINX).
   - Add export inventory to CSV / JSON.
@@ -142,7 +142,7 @@ Target Audience: Platform Operators & AWS Marketplace Administrators.
   - Multi-tenant compliance audit trail recording actor (`USER`, `GATEWAY`, `SYSTEM`), action, IP address, and metadata.
 - [x] **AWS Marketplace View (`AWS Marketplace`)**:
   - Live linkage display for AWS Marketplace SaaS subscriptions, customer identifier resolution, and dimension metering (`active_certs_quantity`).
-- [x] **Next Features for Developer 2**:
+- [ ] **Next Features for Developer 2**:
   - Usage metering chart showing certificate quantities reported to AWS Marketplace Metering Service.
   - Plan upgrade / downgrade modal.
 

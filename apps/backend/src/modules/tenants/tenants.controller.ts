@@ -1,9 +1,10 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { Role, type Tenant } from '@clm/shared-types';
+import { Role, TenantStatus, type Tenant } from '@clm/shared-types';
 import { Roles } from '../../shared/auth/roles.decorator';
 import { RolesGuard } from '../../shared/auth/roles.guard';
 import { JwtAuthGuard } from '../../shared/auth/jwt-auth.guard';
+import { CurrentTenant } from '../../shared/tenancy/current-tenant.decorator';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
@@ -14,6 +15,26 @@ import { UpdateTenantDto } from './dto/update-tenant.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class TenantsController {
   constructor(private readonly tenantsService: TenantsService) { }
+
+  @Get('my-status')
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.SECURITY_LEAD, Role.DEVOPS_ENGINEER, Role.AUDITOR, Role.READ_ONLY)
+  @ApiOperation({ summary: 'Get current tenant verification status' })
+  @ApiResponse({ status: 200, description: 'Tenant verification status returned' })
+  async getMyStatus(@CurrentTenant() tenantId: string): Promise<{ status: TenantStatus; tenant: Tenant }> {
+    const tenant = await this.tenantsService.findById(tenantId);
+    return { status: tenant.status, tenant };
+  }
+
+  @Patch(':id/status')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Approve or Reject tenant organization (Super Admin only)' })
+  @ApiResponse({ status: 200, description: 'Tenant status updated' })
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() body: { status: TenantStatus },
+  ): Promise<Tenant> {
+    return this.tenantsService.updateStatus(id, body.status);
+  }
 
   @Post()
   @Roles(Role.SUPER_ADMIN)

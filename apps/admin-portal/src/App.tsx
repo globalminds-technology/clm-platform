@@ -39,9 +39,12 @@ export function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'tenants' | 'audit' | 'marketplace'>('tenants');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'TRIAL' | 'SUSPENDED'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PENDING_APPROVAL' | 'TRIAL' | 'SUSPENDED'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [effectiveDate, setEffectiveDate] = useState<string>('2026-11-10');
+  const [customCertQuota, setCustomCertQuota] = useState<number>(500);
+  const [customGatewayQuota, setCustomGatewayQuota] = useState<number>(15);
 
   // Fetch real data from PostgreSQL backend
   const fetchAdminData = useCallback(async () => {
@@ -195,26 +198,44 @@ export function App() {
     }
   };
 
+  const handleApproveTenant = async (tenantId: string) => {
+    try {
+      const updated = await api.tenants.updateStatus(tenantId, TenantStatus.ACTIVE);
+      setTenants(prev => prev.map(t => (t.id === tenantId ? updated : t)));
+      toast.success('Organization Approved', `Tenant is now active with full ACME & gateway privileges.`);
+      api.audit.listGlobal().then(setAuditLogs).catch(() => {});
+    } catch (err: any) {
+      toast.error('Approval Failed', err.message || 'Could not approve tenant');
+    }
+  };
+
+  const handleRejectTenant = async (tenantId: string) => {
+    try {
+      const updated = await api.tenants.updateStatus(tenantId, TenantStatus.REJECTED);
+      setTenants(prev => prev.map(t => (t.id === tenantId ? updated : t)));
+      toast.warning('Organization Declined', `Tenant application has been rejected.`);
+      api.audit.listGlobal().then(setAuditLogs).catch(() => {});
+    } catch (err: any) {
+      toast.error('Rejection Failed', err.message || 'Could not reject tenant');
+    }
+  };
+
   const handleUpdateTenantTier = async () => {
     if (!selectedTenant) return;
-    const quotaMap: Record<SubscriptionTier, { certs: number; gateways: number }> = {
-      [SubscriptionTier.ENTERPRISE]: { certs: 1000, gateways: 25 },
-      [SubscriptionTier.PROFESSIONAL]: { certs: 500, gateways: 15 },
-      [SubscriptionTier.AWS_MARKETPLACE_PAYGO]: { certs: 250, gateways: 10 },
-      [SubscriptionTier.COMMUNITY]: { certs: 50, gateways: 2 },
-    };
-
-    const quota = quotaMap[selectedPlanTier];
     try {
       const updated = await api.tenants.update(selectedTenant.id, {
         tier: selectedPlanTier,
-        maxCertificates: quota.certs,
-        maxGateways: quota.gateways,
+        maxCertificates: customCertQuota,
+        maxGateways: customGatewayQuota,
+        effectivePlanDate: effectiveDate,
       });
       setTenants(prev => prev.map(t => (t.id === selectedTenant.id ? updated : t)));
       setIsPlanModalOpen(false);
-      toast.success('Plan Tier Updated', `${selectedTenant.name} updated to ${selectedPlanTier}`);
-      api.audit.listGlobal().then(setAuditLogs).catch(() => { });
+      toast.success(
+        'Plan & Quotas Configured',
+        `${selectedTenant.name} updated to ${selectedPlanTier} (Effective: ${effectiveDate})`,
+      );
+      api.audit.listGlobal().then(setAuditLogs).catch(() => {});
     } catch (err: any) {
       toast.error('Update Failed', err.message || 'Failed to update subscription tier');
     }
@@ -226,6 +247,7 @@ export function App() {
       t.slug.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (t.awsAccountId && t.awsAccountId.includes(searchTerm));
     if (statusFilter === 'ACTIVE') return matchesSearch && t.status === TenantStatus.ACTIVE;
+    if (statusFilter === 'PENDING_APPROVAL') return matchesSearch && t.status === TenantStatus.PENDING_APPROVAL;
     if (statusFilter === 'TRIAL') return matchesSearch && t.status === TenantStatus.TRIAL;
     if (statusFilter === 'SUSPENDED') return matchesSearch && t.status === TenantStatus.SUSPENDED;
     return matchesSearch;
@@ -251,7 +273,7 @@ export function App() {
     },
     {
       id: 'marketplace',
-      label: 'AWS Marketplace',
+      label: 'Cloud Marketplaces & Billing',
       icon: <ShoppingBag className="h-5 w-5" />,
       active: activeTab === 'marketplace',
       onClick: () => setActiveTab('marketplace'),
@@ -338,6 +360,19 @@ export function App() {
                     }`}
                 >
                   All ({tenants.length})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('PENDING_APPROVAL')}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    statusFilter === 'PENDING_APPROVAL'
+                      ? 'bg-amber-600 text-white shadow-sm shadow-amber-500/30'
+                      : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
+                  }`}
+                >
+                  <span>Pending</span>
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-amber-800 font-extrabold">
+                    {tenants.filter(t => t.status === TenantStatus.PENDING_APPROVAL).length}
+                  </span>
                 </button>
                 <button
                   onClick={() => setStatusFilter('ACTIVE')}
@@ -529,32 +564,57 @@ export function App() {
 
                   {/* Action Buttons */}
                   <div className="flex items-center gap-3 pt-2">
-                    <button
-                      onClick={() => {
-                        setSelectedPlanTier(selectedTenant.tier);
-                        setIsPlanModalOpen(true);
-                      }}
-                      className="py-3 px-4 rounded-2xl text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1.5"
-                    >
-                      <ArrowUpRight className="h-4 w-4" />
-                      <span>Change Plan</span>
-                    </button>
+                    {selectedTenant.status === TenantStatus.PENDING_APPROVAL ? (
+                      <>
+                        <button
+                          onClick={() => handleApproveTenant(selectedTenant.id)}
+                          className="flex-1 py-3 px-5 rounded-2xl text-xs font-bold text-white bg-linear-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span>Approve & Activate Workspace</span>
+                        </button>
 
-                    <button
-                      onClick={() => handleToggleStatus(selectedTenant.id)}
-                      className="primary-gradient-btn flex-1 py-3 px-5 rounded-2xl text-xs font-bold flex items-center justify-center gap-2"
-                    >
-                      <Power className="h-4 w-4" />
-                      <span>{selectedTenant.status === TenantStatus.ACTIVE ? 'Suspend Organization' : 'Activate Organization'}</span>
-                    </button>
+                        <button
+                          onClick={() => handleRejectTenant(selectedTenant.id)}
+                          className="py-3 px-5 rounded-2xl text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors flex items-center gap-1.5"
+                        >
+                          <span>Decline</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            setSelectedPlanTier(selectedTenant.tier);
+                            setCustomCertQuota(selectedTenant.maxCertificates);
+                            setCustomGatewayQuota(selectedTenant.maxGateways);
+                            setIsPlanModalOpen(true);
+                          }}
+                          className="py-3 px-4 rounded-2xl text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1.5"
+                        >
+                          <ArrowUpRight className="h-4 w-4" />
+                          <span>Custom Plan & Quota</span>
+                        </button>
 
-                    <button
-                      onClick={() => handleDeleteTenant(selectedTenant.id, selectedTenant.name)}
-                      className="py-3 px-5 rounded-2xl text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors flex items-center gap-2"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span>Delete</span>
-                    </button>
+                        <button
+                          onClick={() => handleToggleStatus(selectedTenant.id)}
+                          className="primary-gradient-btn flex-1 py-3 px-5 rounded-2xl text-xs font-bold flex items-center justify-center gap-2"
+                        >
+                          <Power className="h-4 w-4" />
+                          <span>
+                            {selectedTenant.status === TenantStatus.ACTIVE ? 'Suspend Organization' : 'Activate Organization'}
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteTenant(selectedTenant.id, selectedTenant.name)}
+                          className="py-3 px-5 rounded-2xl text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors flex items-center gap-2"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span>Delete</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ) : null}
@@ -618,23 +678,45 @@ export function App() {
           </div>
         )}
 
-        {/* Tab 3: AWS Marketplace View */}
+        {/* Tab 3: Cloud Marketplaces & Billing View */}
         {activeTab === 'marketplace' && (
           <div className="space-y-5 pr-3 pb-6">
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-white rounded-2xl soft-card p-5">
-                <div className="text-xs font-bold text-slate-400 uppercase">Product Code</div>
-                <div className="text-base font-bold text-[#0F172A] mt-1 font-mono">clm-saas-enterprise</div>
-              </div>
-              <div className="bg-white rounded-2xl soft-card p-5">
-                <div className="text-xs font-bold text-slate-400 uppercase">Batch Interval</div>
-                <div className="text-base font-bold text-[#0F172A] mt-1">1 Hour Sync</div>
-              </div>
-              <div className="bg-white rounded-2xl soft-card p-5">
-                <div className="text-xs font-bold text-slate-400 uppercase">Callback Status</div>
-                <div className="text-base font-bold text-emerald-600 mt-1 flex items-center gap-1.5 font-bold">
-                  <CheckCircle2 className="h-4 w-4" /> Healthy
+            {/* 4 Multi-Cloud Marketplace Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white rounded-2xl soft-card p-5 space-y-2 border-t-4 border-t-amber-500">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-amber-700 uppercase">AWS Marketplace</span>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                 </div>
+                <div className="text-sm font-black text-slate-800">BatchMeterUsage API</div>
+                <p className="text-[11px] text-slate-500">Hourly dimension metering with AWS Customer Identifier.</p>
+              </div>
+
+              <div className="bg-white rounded-2xl soft-card p-5 space-y-2 border-t-4 border-t-blue-500">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-blue-700 uppercase">Azure Marketplace</span>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                </div>
+                <div className="text-sm font-black text-slate-800">SaaS Fulfillment v2</div>
+                <p className="text-[11px] text-slate-500">Active webhook listener for Azure Subscription webhook events.</p>
+              </div>
+
+              <div className="bg-white rounded-2xl soft-card p-5 space-y-2 border-t-4 border-t-emerald-500">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-700 uppercase">GCP Marketplace</span>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                </div>
+                <div className="text-sm font-black text-slate-800">Partner Procurement</div>
+                <p className="text-[11px] text-slate-500">Google Cloud Commerce account linking & entitlement sync.</p>
+              </div>
+
+              <div className="bg-white rounded-2xl soft-card p-5 space-y-2 border-t-4 border-t-indigo-500">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-indigo-700 uppercase">Zoho Marketplace</span>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                </div>
+                <div className="text-sm font-black text-slate-800">Extension Recurring</div>
+                <p className="text-[11px] text-slate-500">Zoho CRM & Desk security extension subscription lifecycle.</p>
               </div>
             </div>
 
@@ -645,11 +727,11 @@ export function App() {
                   <div className="flex items-center gap-2">
                     <BarChart3 className="h-5 w-5 text-blue-600" />
                     <h4 className="text-base font-extrabold text-[#0F172A]">
-                      AWS Marketplace Usage Metering
+                      Cloud Usage Metering Dimension Aggregator
                     </h4>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Dimension: <code className="text-blue-600 font-mono">active_certs_quantity</code> reported hourly to AWS Metering Service.
+                    Live dimension: <code className="text-blue-600 font-mono">active_certs_quantity</code> synchronized hourly across all connected cloud marketplaces.
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
@@ -780,12 +862,12 @@ export function App() {
         </form>
       </Modal>
 
-      {/* Modal: Change Organization Plan */}
+      {/* Modal: Change Organization Plan & Effective Date */}
       <Modal
         isOpen={isPlanModalOpen}
         onClose={() => setIsPlanModalOpen(false)}
-        title="Change Subscription Tier"
-        description={`Update plan and resource quotas for ${selectedTenant?.name}`}
+        title="Custom Subscription & Resource Quotas"
+        description={`Configure tier, custom limits, and scheduled effective date for ${selectedTenant?.name}`}
         maxWidth="md"
       >
         <div className="space-y-4">
@@ -796,7 +878,7 @@ export function App() {
                 {
                   tier: SubscriptionTier.COMMUNITY,
                   label: 'Community',
-                  desc: 'Free for open-source & testing (50 certs, 2 gateways)',
+                  desc: 'Free for testing & open source (50 certs, 2 gateways)',
                 },
                 {
                   tier: SubscriptionTier.AWS_MARKETPLACE_PAYGO,
@@ -804,18 +886,24 @@ export function App() {
                   desc: 'Metered billing via AWS (250 certs, 10 gateways)',
                 },
                 {
+                  tier: SubscriptionTier.PROFESSIONAL,
+                  label: 'Professional',
+                  desc: 'Team scale with RBAC & Priority SLA (500 certs, 15 gateways)',
+                },
+                {
                   tier: SubscriptionTier.ENTERPRISE,
                   label: 'Enterprise',
-                  desc: 'Full private deployment & SLA (1000 certs, 25 gateways)',
+                  desc: 'Dedicated enterprise infrastructure (1000 certs, 25 gateways)',
                 },
               ].map(plan => (
                 <div
                   key={plan.tier}
                   onClick={() => setSelectedPlanTier(plan.tier)}
-                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${selectedPlanTier === plan.tier
+                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                    selectedPlanTier === plan.tier
                       ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500/30'
                       : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
+                  }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs text-slate-800">{plan.label}</span>
@@ -827,6 +915,39 @@ export function App() {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Max Certificate Quota</label>
+              <input
+                type="number"
+                value={customCertQuota}
+                onChange={e => setCustomCertQuota(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-[#F8FAFC] border border-slate-200 rounded-xl text-xs font-bold"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Max Gateway Daemons</label>
+              <input
+                type="number"
+                value={customGatewayQuota}
+                onChange={e => setCustomGatewayQuota(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-[#F8FAFC] border border-slate-200 rounded-xl text-xs font-bold"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+              Plan Effective Date (Grandfathering)
+            </label>
+            <input
+              type="date"
+              value={effectiveDate}
+              onChange={e => setEffectiveDate(e.target.value)}
+              className="w-full px-3 py-2 bg-[#F8FAFC] border border-slate-200 rounded-xl text-xs font-mono"
+            />
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
@@ -842,7 +963,7 @@ export function App() {
               onClick={handleUpdateTenantTier}
               className="primary-gradient-btn px-5 py-2 rounded-xl text-xs font-bold"
             >
-              Apply Tier Changes
+              Apply Plan & Quotas
             </button>
           </div>
         </div>

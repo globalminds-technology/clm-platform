@@ -8,6 +8,14 @@ export class TenantsEndpoint {
     return this.http.get<Tenant[]>('tenants');
   }
 
+  getMyStatus(): Promise<{ status: string; tenant: Tenant }> {
+    return this.http.get<{ status: string; tenant: Tenant }>('tenants/my-status');
+  }
+
+  updateStatus(id: string, status: string): Promise<Tenant> {
+    return this.http.patch<Tenant>(`tenants/${id}/status`, { status });
+  }
+
   getById(id: string): Promise<Tenant> {
     return this.http.get<Tenant>(`tenants/${id}`);
   }

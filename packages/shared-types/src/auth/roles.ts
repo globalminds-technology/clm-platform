@@ -27,10 +27,30 @@ export interface User {
   updatedAt: string;
 }
 
+export interface InviteMemberRequest {
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: Role;
+}
+
+export interface UpdateMemberRoleRequest {
+  userId: string;
+  role: Role;
+}
+
+export interface UpdateMemberStatusRequest {
+  userId: string;
+  status: UserStatus;
+}
+
+export interface MemberListItem extends User {
+  tenantName?: string;
+}
+
 export interface AuthSession {
   user: User;
   tenantId: string;
   token: string;
   expiresAt: string;
 }
-
