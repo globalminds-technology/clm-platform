@@ -11,7 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { Role, type Certificate, type CertificateFilterParams } from '@clm/shared-types';
+import { Role, type Certificate, type CertificateFilterParams, type LiveTlsProbeResult } from '@clm/shared-types';
 import { Roles } from '../../shared/auth/roles.decorator';
 import { RolesGuard } from '../../shared/auth/roles.guard';
 import { JwtAuthGuard } from '../../shared/auth/jwt-auth.guard';
@@ -25,6 +25,17 @@ import { CreateCertificateDto } from './dto/create-certificate.dto';
 @Controller('certificates')
 export class CertificatesController {
   constructor(private readonly certificatesService: CertificatesService) { }
+
+  @Post('probe')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.SECURITY_LEAD)
+  @ApiOperation({ summary: 'Probe live domain over TLS to extract actual X.509 certificate and remaining validity' })
+  @ApiResponse({ status: 200, description: 'Live TLS probe completed successfully' })
+  async probe(
+    @Body() body: { domain: string; port?: number },
+  ): Promise<LiveTlsProbeResult> {
+    return this.certificatesService.probeLive(body.domain, body.port || 443);
+  }
 
   @Get()
     @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.AUDITOR)

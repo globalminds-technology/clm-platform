@@ -8,6 +8,10 @@ export class TenantsEndpoint {
     return this.http.get<Tenant[]>('tenants');
   }
 
+  getMetrics(): Promise<any> {
+    return this.http.get<any>('tenants/metrics');
+  }
+
   getMyStatus(): Promise<{ status: string; tenant: Tenant }> {
     return this.http.get<{ status: string; tenant: Tenant }>('tenants/my-status');
   }

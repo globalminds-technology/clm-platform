@@ -14,7 +14,7 @@ export interface Certificate {
   notAfter: string;
   daysRemaining: number;
   autoRenew: boolean;
-  renewBeforeDays: number;
+  renewBeforeDays: number; d
   gatewayId?: string | null;
   deployTargetCount: number;
   lastRenewedAt?: string | null;
@@ -34,6 +34,21 @@ export interface CertificateDetail extends Certificate {
   }>;
 }
 
+export interface LiveTlsProbeResult {
+  domain: string;
+  port: number;
+  subject: string;
+  issuer: string;
+  sans: string[];
+  notBefore: string;
+  notAfter: string;
+  daysRemaining: number;
+  serialNumber: string;
+  fingerprintSha256: string;
+  keyAlgorithm: string;
+  isExpired: boolean;
+}
+
 export interface CreateCertificateRequest {
   domain: string;
   sans?: string[];
@@ -42,6 +57,11 @@ export interface CreateCertificateRequest {
   autoRenew?: boolean;
   renewBeforeDays?: number;
   gatewayId?: string;
+  issuer?: string;
+  notBefore?: string;
+  notAfter?: string;
+  serialNumber?: string;
+  fingerprintSha256?: string;
 }
 
 export interface RenewCertificateRequest {

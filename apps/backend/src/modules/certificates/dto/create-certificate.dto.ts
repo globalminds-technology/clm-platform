@@ -39,5 +39,30 @@ export class CreateCertificateDto implements CreateCertificateRequest {
   @IsString()
   @IsOptional()
   gatewayId?: string;
+
+  @ApiPropertyOptional({ description: 'Certificate Authority Issuer name' })
+  @IsString()
+  @IsOptional()
+  issuer?: string;
+
+  @ApiPropertyOptional({ description: 'Certificate valid from timestamp (ISO)' })
+  @IsString()
+  @IsOptional()
+  notBefore?: string;
+
+  @ApiPropertyOptional({ description: 'Certificate valid to expiration timestamp (ISO)' })
+  @IsString()
+  @IsOptional()
+  notAfter?: string;
+
+  @ApiPropertyOptional({ description: 'Certificate Serial Number' })
+  @IsString()
+  @IsOptional()
+  serialNumber?: string;
+
+  @ApiPropertyOptional({ description: 'Certificate SHA-256 Fingerprint' })
+  @IsString()
+  @IsOptional()
+  fingerprintSha256?: string;
 }
 

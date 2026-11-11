@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { TenantContextService } from '../../shared/tenancy/tenant-context.service';
 import { CertStatus, KeyAlgorithm, type Certificate, type CertificateFilterParams } from '@clm/shared-types';
 import { type CreateCertificateDto } from './dto/create-certificate.dto';
@@ -39,10 +39,25 @@ export class CertificatesRepository {
 
   async create(tenantId: string, dto: CreateCertificateDto): Promise<Certificate> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
-      const notBefore = new Date();
-      const notAfter = new Date(Date.now() + 90 * 86400000);
-      const serialNumber = Math.random().toString(16).substring(2, 18);
-      const fingerprint = Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      const tenantCheck = await client.query('SELECT status FROM tenants WHERE id = $1;', [tenantId]);
+      if (tenantCheck.rows[0]?.status === 'PENDING_APPROVAL') {
+        throw new ForbiddenException('Certificate issuance is locked. Organization is pending security review.');
+      }
+
+      const notBefore = dto.notBefore ? new Date(dto.notBefore) : new Date();
+      const notAfter = dto.notAfter ? new Date(dto.notAfter) : new Date(Date.now() + 90 * 86400000);
+      const serialNumber = dto.serialNumber || Math.random().toString(16).substring(2, 18);
+      const fingerprint = dto.fingerprintSha256 || Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      const issuer = dto.issuer || 'DigiCert TLS RSA CA';
+
+      const now = new Date();
+      const daysRemaining = Math.max(0, Math.ceil((notAfter.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+      let status = CertStatus.ACTIVE;
+      if (daysRemaining <= 0) {
+        status = CertStatus.EXPIRED;
+      } else if (daysRemaining <= 30) {
+        status = CertStatus.EXPIRING_SOON;
+      }
 
       const res = await client.query(
         `INSERT INTO certificates (
@@ -55,9 +70,9 @@ export class CertificatesRepository {
           tenantId,
           dto.domain,
           dto.sans || [dto.domain],
-          CertStatus.ACTIVE,
+          status,
           dto.keyAlgorithm || KeyAlgorithm.RSA_2048,
-          'DigiCert TLS RSA CA',
+          issuer,
           serialNumber,
           fingerprint,
           notBefore.toISOString(),

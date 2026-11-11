@@ -12,6 +12,7 @@ import { GatewaysModule } from './modules/gateways/gateways.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { PlansModule } from './modules/plans/plans.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
+import { CloudAccountsModule } from './modules/cloud-accounts/cloud-accounts.module';
 
 @Module({
   imports: [
@@ -30,6 +31,8 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
     CertificatesModule,
     GatewaysModule,
     AuditLogsModule,
+    CloudAccountsModule,
   ],
 })
 export class AppModule { }
+

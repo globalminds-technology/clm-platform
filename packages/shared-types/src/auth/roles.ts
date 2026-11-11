@@ -51,6 +51,31 @@ export interface MemberListItem extends User {
 export interface AuthSession {
   user: User;
   tenantId: string;
-  token: string;
-  expiresAt: string;
+  token?: string;
+  expiresAt?: string;
+  tokens?: {
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+  };
 }
+
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ForgotPasswordResponse {
+  message: string;
+  devCode?: string;
+}
+
+export interface ResetPasswordRequest {
+  email: string;
+  token: string;
+  newPassword: string;
+}
+
+export interface ResetPasswordResponse {
+  message: string;
+}
+

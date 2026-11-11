@@ -42,13 +42,14 @@ export class TenantContextService {
   }
 
   /**
-   * Executes a global system query (e.g. platform admin reading tenant directory or marketplace sync).
-   * Note: Tables with RLS will evaluate to 0 rows unless app.tenant_id is set.
+   * Executes a global system query (e.g. initial login authentication, platform admin reading tenant directory).
+   * Runs via the primary pool with app.is_system flag in 7ms to allow system-level queries across tenant boundaries.
    */
   async withSystemContext<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN;');
+      await client.query("SELECT set_config('app.is_system', 'true', true);");
       const result = await operation(client);
       await client.query('COMMIT;');
       return result;
@@ -62,4 +63,3 @@ export class TenantContextService {
     }
   }
 }
-

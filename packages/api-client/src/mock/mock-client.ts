@@ -311,6 +311,41 @@ export class MockApiClient {
         expiresAt: new Date(Date.now() + 86400000).toISOString(),
       };
     },
+    registerTenant: async (dto: any): Promise<any> => {
+      await this.delay();
+      return {
+        tenant: {
+          id: 'a0000000-0000-0000-0000-000000000001',
+          name: dto.organizationName || 'Acme Corp',
+          slug: 'acme-corp',
+          status: 'PENDING_APPROVAL',
+          tier: 'COMMUNITY',
+          maxCertificates: 25,
+          maxGateways: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        user: this._currentUser,
+        tokens: {
+          accessToken: 'mock_access_token',
+          refreshToken: 'mock_refresh_token',
+          expiresIn: 900,
+        },
+      };
+    },
+    forgotPassword: async (_data: { email: string }): Promise<{ message: string; devCode?: string }> => {
+      await this.delay();
+      return {
+        message: 'If an account with that email exists, password reset instructions have been sent.',
+        devCode: '123456',
+      };
+    },
+    resetPassword: async (_data: { email: string; token: string; newPassword: string }): Promise<{ message: string }> => {
+      await this.delay();
+      return {
+        message: 'Password has been successfully reset. You can now sign in with your new password.',
+      };
+    },
     logout: async (): Promise<void> => {
       await this.delay();
     },
@@ -319,4 +354,53 @@ export class MockApiClient {
       return this._currentUser;
     },
   };
+
+  cloudAccounts = {
+    list: async (): Promise<any[]> => {
+      await this.delay();
+      return [
+        {
+          id: 'ca-0000000-0000-0000-0000-000000000001',
+          tenantId: this._currentUser.tenantId,
+          provider: 'AWS',
+          name: 'Acme Cloud Production (us-east-1)',
+          authType: 'ACCESS_KEY',
+          status: 'CONNECTED',
+          region: 'us-east-1',
+          maskedSecret: 'AKIA••••••••••••3F9A',
+          lastSyncAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+    },
+    create: async (data: any): Promise<any> => {
+      await this.delay();
+      return {
+        id: `ca-${Date.now()}`,
+        tenantId: this._currentUser.tenantId,
+        provider: data.provider,
+        name: data.name,
+        authType: data.authType || 'ACCESS_KEY',
+        status: 'CONNECTED',
+        region: data.region || 'us-east-1',
+        maskedSecret: 'AES-256-GCM Encrypted',
+        lastSyncAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    },
+    testConnection: async (): Promise<any> => {
+      await this.delay();
+      return {
+        success: true,
+        message: 'Successfully verified cloud credentials via AES-256-GCM. 14 AWS resources synchronized.',
+        discoveredResourcesCount: 14,
+      };
+    },
+    delete: async (): Promise<void> => {
+      await this.delay();
+    },
+  };
 }
+

@@ -24,6 +24,10 @@ export class HttpClient {
     this.baseUrl = url.replace(/\/$/, '');
   }
 
+  public setDefaultHeaders(headers: Record<string, string>) {
+    this.defaultHeaders = { ...this.defaultHeaders, ...headers };
+  }
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}/${endpoint.replace(/^\//, '')}`;
     const headers = new Headers(options.headers || {});

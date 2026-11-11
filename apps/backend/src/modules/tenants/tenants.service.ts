@@ -30,21 +30,38 @@ export class TenantsService {
     adminEmail: string;
     password: string;
     adminFirstName: string;
-    adminLastName: string;
+    adminLastName?: string;
     marketplaceProvider?: string;
   }): Promise<{ tenant: Tenant; adminUser: any }> {
-    const slug = dto.organizationName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '') || `org-${Date.now()}`;
+    const baseSlug =
+      dto.organizationName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || `org-${Date.now()}`;
 
-    const existing = await this.tenantsRepository.findBySlug(slug);
+    let slug = baseSlug;
+    let existing = await this.tenantsRepository.findBySlug(slug);
+    let attempts = 0;
+    while (existing && attempts < 5) {
+      slug = `${baseSlug}-${Math.random().toString(36).substring(2, 6)}`;
+      existing = await this.tenantsRepository.findBySlug(slug);
+      attempts++;
+    }
     if (existing) {
-      throw new ConflictException(`Organization slug '${slug}' is already taken.`);
+      slug = `${baseSlug}-${Date.now().toString(36)}`;
     }
 
     const passwordHash = await this.cryptoService.hashPassword(dto.password);
-    return this.tenantsRepository.register({ ...dto, slug }, passwordHash);
+    try {
+      return await this.tenantsRepository.register({ ...dto, slug }, passwordHash);
+    } catch (err: any) {
+      if (err.code === '23505' || err.message?.includes('duplicate key')) {
+        throw new ConflictException(
+          `An account with email '${dto.adminEmail}' already exists. Please sign in to your workspace instead.`,
+        );
+      }
+      throw err;
+    }
   }
 
   async updateStatus(id: string, status: any): Promise<Tenant> {
@@ -57,6 +74,10 @@ export class TenantsService {
 
   async findAll(): Promise<Tenant[]> {
     return this.tenantsRepository.findAll();
+  }
+
+  async getMetrics() {
+    return this.tenantsRepository.getMetrics();
   }
 
   async findById(id: string): Promise<Tenant> {

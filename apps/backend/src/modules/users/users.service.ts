@@ -106,5 +106,10 @@ export class UsersService {
   async updateLastLogin(tenantId: string, id: string): Promise<void> {
     await this.usersRepository.updateLastLogin(tenantId, id);
   }
+
+  async updatePasswordGlobal(email: string, passwordHash: string): Promise<void> {
+    await this.usersRepository.updatePasswordGlobal(email, passwordHash);
+  }
 }
+
 

@@ -6,6 +6,8 @@ import { DeploymentsEndpoint } from './endpoints/deployments';
 import { AuditEndpoint } from './endpoints/audit';
 import { AuthEndpoint } from './endpoints/auth';
 import { UsersEndpoint } from './endpoints/users';
+import { PlansEndpoint } from './endpoints/plans';
+import { CloudAccountsEndpoint } from './endpoints/cloud-accounts';
 import { MockApiClient } from './mock/mock-client';
 
 export interface ApiClientConfig extends Partial<HttpClientConfig> {
@@ -20,7 +22,10 @@ export interface ApiClient {
   audit: AuditEndpoint;
   auth: AuthEndpoint;
   users: UsersEndpoint;
+  plans: PlansEndpoint;
+  cloudAccounts: CloudAccountsEndpoint;
   http?: HttpClient;
+  setDefaultHeaders?: (headers: Record<string, string>) => void;
 }
 
 export function createApiClient(config: ApiClientConfig = {}): ApiClient {
@@ -37,6 +42,7 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
 
   return {
     http,
+    setDefaultHeaders: (headers: Record<string, string>) => http.setDefaultHeaders(headers),
     certificates: new CertificatesEndpoint(http),
     gateways: new GatewaysEndpoint(http),
     tenants: new TenantsEndpoint(http),
@@ -44,6 +50,8 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
     audit: new AuditEndpoint(http),
     auth: new AuthEndpoint(http),
     users: new UsersEndpoint(http),
+    plans: new PlansEndpoint(http),
+    cloudAccounts: new CloudAccountsEndpoint(http),
   };
 }
 

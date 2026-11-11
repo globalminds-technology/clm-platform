@@ -84,6 +84,18 @@ CREATE TABLE IF NOT EXISTS gateway_enrollment_tokens (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Password Reset Tokens (System-wide recovery verification codes)
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email CITEXT NOT NULL,
+    token_hash VARCHAR(255) NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_email ON password_reset_tokens (email);
+
+
 -- Certificates (Tenant-scoped)
 CREATE TABLE IF NOT EXISTS certificates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
@@ -148,6 +160,30 @@ CREATE TABLE IF NOT EXISTS gateway_commands (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Cloud Accounts (Tenant-scoped encrypted cloud provider credentials with AES-256-GCM)
+CREATE TABLE IF NOT EXISTS cloud_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    tenant_id UUID NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
+    provider VARCHAR(50) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    auth_type VARCHAR(50) NOT NULL DEFAULT 'ACCESS_KEY',
+    status VARCHAR(50) NOT NULL DEFAULT 'CONNECTED',
+    region VARCHAR(64),
+    aws_account_id VARCHAR(64),
+    aws_role_arn VARCHAR(255),
+    azure_tenant_id VARCHAR(255),
+    azure_client_id VARCHAR(255),
+    gcp_project_id VARCHAR(255),
+    encrypted_credentials TEXT NOT NULL,
+    encryption_iv VARCHAR(64) NOT NULL,
+    encryption_tag VARCHAR(64) NOT NULL,
+    masked_secret VARCHAR(64) NOT NULL,
+    last_sync_at TIMESTAMPTZ,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Audit Logs (Append-only compliance log)
 CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
@@ -185,6 +221,7 @@ DECLARE
     'deploy_targets',
     'deployment_records',
     'gateway_commands',
+    'cloud_accounts',
     'audit_logs'
   ];
 BEGIN
@@ -197,8 +234,8 @@ BEGIN
     EXECUTE format(
       'CREATE POLICY tenant_isolation_policy ON %I ' ||
       'FOR ALL TO clm_app ' ||
-      'USING (tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')::uuid) ' ||
-      'WITH CHECK (tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')::uuid);',
+      'USING (current_setting(''app.is_system'', true) = ''true'' OR tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')::uuid) ' ||
+      'WITH CHECK (current_setting(''app.is_system'', true) = ''true'' OR tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')::uuid);',
       t
     );
   END LOOP;
@@ -262,7 +299,7 @@ VALUES (
         '10000000-0000-0000-0000-000000000001',
         'a0000000-0000-0000-0000-000000000001',
         'admin@acme.com',
-        '$argon2id$v=19$m=65536,t=3,p=4$dGVzdHNhbHQxMjM0NTY3OA$YJ7B4M9vV5rE1pQ6wZ3x8sK2nL0mP9uX8vT1rE4wZ2o',
+        '$argon2id$v=19$m=65536,t=3,p=4$6HjL+7JfsReqtNVEejxDYA$Lz/iape+CZYS7eUjt5rXQ+qwvBukbFG57AXboUAZegc',
         'Alice',
         'Vance',
         'TENANT_ADMIN',
@@ -272,12 +309,13 @@ VALUES (
         '10000000-0000-0000-0000-000000000002',
         'a0000000-0000-0000-0000-000000000001',
         'devops@acme.com',
-        '$argon2id$v=19$m=65536,t=3,p=4$dGVzdHNhbHQxMjM0NTY3OA$YJ7B4M9vV5rE1pQ6wZ3x8sK2nL0mP9uX8vT1rE4wZ2o',
+        '$argon2id$v=19$m=65536,t=3,p=4$6HjL+7JfsReqtNVEejxDYA$Lz/iape+CZYS7eUjt5rXQ+qwvBukbFG57AXboUAZegc',
         'Bob',
         'Stone',
         'DEVOPS_ENGINEER',
         'ACTIVE'
     )
+
 ON CONFLICT (tenant_id, email) DO NOTHING;
 
 -- Demo Gateway

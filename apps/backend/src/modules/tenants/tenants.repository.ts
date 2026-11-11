@@ -45,7 +45,7 @@ export class TenantsRepository {
           dto.adminEmail,
           passwordHash,
           dto.adminFirstName,
-          dto.adminLastName,
+          dto.adminLastName || '',
           Role.TENANT_ADMIN,
           UserStatus.ACTIVE,
         ],
@@ -62,7 +62,7 @@ export class TenantsRepository {
       slug: string;
       adminEmail: string;
       adminFirstName: string;
-      adminLastName: string;
+      adminLastName?: string;
       marketplaceProvider?: string;
     },
     passwordHash: string,
@@ -100,7 +100,7 @@ export class TenantsRepository {
           dto.adminEmail.toLowerCase().trim(),
           passwordHash,
           dto.adminFirstName,
-          dto.adminLastName,
+          dto.adminLastName || '',
           Role.TENANT_ADMIN,
           UserStatus.ACTIVE,
         ],
@@ -137,6 +137,91 @@ export class TenantsRepository {
     return this.tenantContextService.withSystemContext(async client => {
       const res = await client.query('SELECT * FROM tenants ORDER BY created_at DESC;');
       return res.rows.map(r => this.mapRowToTenant(r));
+    });
+  }
+
+  async getMetrics(): Promise<{
+    totalTenants: number;
+    activeTenants: number;
+    pendingTenants: number;
+    suspendedTenants: number;
+    directTenants: number;
+    marketplaceTenants: number;
+    totalCertificates: number;
+    totalGateways: number;
+    usageByTenant: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      tier: string;
+      status: string;
+      maxCertificates: number;
+      maxGateways: number;
+      currentCertificates: number;
+      currentGateways: number;
+      billingChannel: string;
+      createdAt: string;
+    }>;
+  }> {
+    return this.tenantContextService.withSystemContext(async client => {
+      const usageRes = await client.query(`
+        SELECT 
+          t.id,
+          t.name,
+          t.slug,
+          t.tier,
+          t.status,
+          t.max_certificates,
+          t.max_gateways,
+          t.aws_customer_identifier,
+          t.aws_account_id,
+          t.created_at,
+          COALESCE(c.cert_count, 0)::int as current_certificates,
+          COALESCE(g.gw_count, 0)::int as current_gateways
+        FROM tenants t
+        LEFT JOIN (
+          SELECT tenant_id, COUNT(*) as cert_count FROM certificates GROUP BY tenant_id
+        ) c ON t.id = c.tenant_id
+        LEFT JOIN (
+          SELECT tenant_id, COUNT(*) as gw_count FROM gateways GROUP BY tenant_id
+        ) g ON t.id = g.tenant_id
+        ORDER BY t.created_at DESC;
+      `);
+
+      const usageByTenant = usageRes.rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        slug: r.slug,
+        tier: r.tier,
+        status: r.status,
+        maxCertificates: Number(r.max_certificates) || 50,
+        maxGateways: Number(r.max_gateways) || 5,
+        currentCertificates: Number(r.current_certificates) || 0,
+        currentGateways: Number(r.current_gateways) || 0,
+        billingChannel: r.aws_customer_identifier ? 'AWS_MARKETPLACE' : 'DIRECT',
+        createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
+      }));
+
+      const totalTenants = usageByTenant.length;
+      const activeTenants = usageByTenant.filter(t => t.status === 'ACTIVE').length;
+      const pendingTenants = usageByTenant.filter(t => t.status === 'PENDING_APPROVAL').length;
+      const suspendedTenants = usageByTenant.filter(t => t.status === 'SUSPENDED').length;
+      const marketplaceTenants = usageByTenant.filter(t => t.billingChannel !== 'DIRECT').length;
+      const directTenants = totalTenants - marketplaceTenants;
+      const totalCertificates = usageByTenant.reduce((acc, t) => acc + t.currentCertificates, 0);
+      const totalGateways = usageByTenant.reduce((acc, t) => acc + t.currentGateways, 0);
+
+      return {
+        totalTenants,
+        activeTenants,
+        pendingTenants,
+        suspendedTenants,
+        directTenants,
+        marketplaceTenants,
+        totalCertificates,
+        totalGateways,
+        usageByTenant,
+      };
     });
   }
 
