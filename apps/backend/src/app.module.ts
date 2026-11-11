@@ -13,11 +13,13 @@ import { TenantsModule } from './modules/tenants/tenants.module';
 import { PlansModule } from './modules/plans/plans.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { CloudAccountsModule } from './modules/cloud-accounts/cloud-accounts.module';
+import { LifecycleSchedulerModule } from './modules/lifecycle-scheduler/lifecycle-scheduler.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['apps/backend/.env', '.env'],
     }),
     DatabaseModule,
     TenancyModule,
@@ -32,6 +34,7 @@ import { CloudAccountsModule } from './modules/cloud-accounts/cloud-accounts.mod
     GatewaysModule,
     AuditLogsModule,
     CloudAccountsModule,
+    LifecycleSchedulerModule,
   ],
 })
 export class AppModule { }

@@ -3,6 +3,7 @@ import {
   type CloudAccount,
   type CreateCloudAccountRequest,
   type TestCloudAccountResponse,
+  type SyncAcmResponse,
 } from '@clm/shared-types';
 
 export class CloudAccountsEndpoint {
@@ -20,8 +21,13 @@ export class CloudAccountsEndpoint {
     return this.http.post<TestCloudAccountResponse>(`cloud-accounts/${id}/test`);
   }
 
+  syncAcm(id: string): Promise<SyncAcmResponse> {
+    return this.http.post<SyncAcmResponse>(`cloud-accounts/${id}/sync-acm`);
+  }
+
   delete(id: string): Promise<void> {
     return this.http.delete<void>(`cloud-accounts/${id}`);
   }
 }
+
 

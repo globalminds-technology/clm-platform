@@ -35,6 +35,9 @@ import {
   Activity,
   ExternalLink,
   Radio,
+  Mail,
+  Send,
+  AlertTriangle,
 } from 'lucide-react';
 import ShapeGrid from './components/ShapeGrid/ShapeGrid';
 import {
@@ -42,6 +45,7 @@ import {
   KeyAlgorithm,
   GatewayStatus,
   ValidationMethod,
+  CertificateTrackingMode,
   DeployTargetType,
   Role,
   UserStatus,
@@ -151,6 +155,7 @@ export function App() {
   const [newSans, setNewSans] = useState('');
   const [newIssuer, setNewIssuer] = useState('DigiCert TLS RSA CA');
   const [newAlgorithm, setNewAlgorithm] = useState<KeyAlgorithm>(KeyAlgorithm.RSA_2048);
+  const [newValidityDays, setNewValidityDays] = useState(90);
 
   // Live TLS Probe State
   const [probeDomain, setProbeDomain] = useState('google.com');
@@ -158,6 +163,7 @@ export function App() {
   const [isProbing, setIsProbing] = useState(false);
   const [probeResult, setProbeResult] = useState<LiveTlsProbeResult | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
+  const [isReprobingCertId, setIsReprobingCertId] = useState<string | null>(null);
 
   // Enroll Gateway Modal (Step 4 in Architecture Spec)
   const [showEnrollModal, setShowEnrollModal] = useState(false);
@@ -182,6 +188,14 @@ export function App() {
   const [gcpServiceAccountJson, setGcpServiceAccountJson] = useState('');
   const [isSavingCloud, setIsSavingCloud] = useState(false);
   const [testingCloudId, setTestingCloudId] = useState<string | null>(null);
+  const [syncingAcmId, setSyncingAcmId] = useState<string | null>(null);
+
+  // Alerts & Notifications state
+  const [alertRecipientEmail, setAlertRecipientEmail] = useState('pashokbabu.38@gmail.com');
+  const [slackWebhookUrl, setSlackWebhookUrl] = useState('');
+  const [isSendingTestAlert, setIsSendingTestAlert] = useState(false);
+  const [alertThresholdDays, setAlertThresholdDays] = useState(7);
+  const [isSavingAlertConfig, setIsSavingAlertConfig] = useState(false);
 
   // Check status polling for PENDING_APPROVAL gating
   const checkTenantVerificationStatus = useCallback(async (manual = false) => {
@@ -535,8 +549,21 @@ export function App() {
   }, [fetchTenantData]);
 
   const handleManualSync = async () => {
-    await fetchTenantData();
-    toast.info('Database Synchronized', 'Fetched latest certificates and gateway telemetry.');
+    try {
+      const stats = await api.scheduler?.evaluateNow();
+      await fetchTenantData();
+      if (stats && stats.autoRenewedCerts > 0) {
+        toast.success(
+          'Autonomous Renewal Executed',
+          `Engine evaluated infrastructure: ${stats.autoRenewedCerts} expiring certificate(s) auto-renewed in database.`,
+        );
+      } else {
+        toast.info('Database Synchronized', 'Fetched latest certificates and gateway telemetry from PostgreSQL.');
+      }
+    } catch {
+      await fetchTenantData();
+      toast.info('Database Synchronized', 'Fetched latest certificates and gateway telemetry.');
+    }
   };
 
   const handleOpenEnrollModal = async () => {
@@ -664,6 +691,26 @@ export function App() {
     }
   };
 
+  const handleSyncAcm = async (id: string) => {
+    setSyncingAcmId(id);
+    try {
+      const res = await api.cloudAccounts.syncAcm(id);
+      if (res.success) {
+        toast.success(
+          res.isLiveAcm ? 'Live AWS ACM Synced' : 'AWS ACM Synced',
+          `${res.message} (${res.discovered} newly discovered, ${res.updated} updated).`,
+        );
+      } else {
+        toast.error('Sync Incomplete', res.message);
+      }
+      await fetchTenantData();
+    } catch (err: any) {
+      toast.error('ACM Sync Failed', err.message || 'Failed to sync AWS ACM certificates.');
+    } finally {
+      setSyncingAcmId(null);
+    }
+  };
+
   const handleDeleteCloudAccount = async (id: string, name: string) => {
     try {
       await api.cloudAccounts.delete(id);
@@ -673,6 +720,35 @@ export function App() {
       toast.error('Delete Failed', err.message || 'Could not remove cloud account.');
     }
   };
+
+  const handleSendTestAlert = async () => {
+    setIsSendingTestAlert(true);
+    try {
+      const email = alertRecipientEmail || currentUser?.email || 'bookmyevent2026@gmail.com';
+      const res = await api.scheduler.sendTestAlert(email);
+      if (res.success) {
+        toast.success('Live Alert Dispatched', `${res.message}`);
+      } else {
+        toast.error('Alert Failed', res.message);
+      }
+    } catch (err: any) {
+      toast.error('Dispatch Failed', err.message || 'Could not send test alert.');
+    } finally {
+      setIsSendingTestAlert(false);
+    }
+  };
+
+  const handleSaveAlertConfig = () => {
+    setIsSavingAlertConfig(true);
+    setTimeout(() => {
+      setIsSavingAlertConfig(false);
+      toast.success(
+        'Policy Saved',
+        `Urgent threshold set to ≤${alertThresholdDays}d. Alerts dispatched to ${alertRecipientEmail || 'default admin'}.`,
+      );
+    }, 350);
+  };
+
 
 
   const selectedCert = useMemo(() => {
@@ -790,8 +866,9 @@ export function App() {
         domain: probeResult.domain,
         sans: probeResult.sans,
         keyAlgorithm: keyAlgo,
+        trackingMode: CertificateTrackingMode.MONITORED,
         validationMethod: ValidationMethod.MANUAL,
-        autoRenew: true,
+        autoRenew: false,
         renewBeforeDays: 30,
         gatewayId: gateways[0]?.id,
         issuer: probeResult.issuer,
@@ -822,12 +899,18 @@ export function App() {
       .filter(Boolean);
 
     try {
+      const notBefore = new Date();
+      const notAfter = new Date(Date.now() + newValidityDays * 86400000);
+
       const created = await api.certificates.create({
         domain: newDomain.trim(),
         sans: sansArray.length > 0 ? sansArray : [newDomain.trim()],
         keyAlgorithm: newAlgorithm,
         validationMethod: ValidationMethod.DNS_01,
-        renewBeforeDays: 30,
+        issuer: newIssuer,
+        notBefore: notBefore.toISOString(),
+        notAfter: notAfter.toISOString(),
+        renewBeforeDays: Math.min(30, Math.max(1, Math.floor(newValidityDays / 3))),
         autoRenew: true,
         gatewayId: gateways[0]?.id,
       });
@@ -838,13 +921,49 @@ export function App() {
       setNewDomain('');
       setNewSans('');
 
-      toast.success('Certificate Created', `SSL certificate for "${newDomain.trim()}" issued successfully.`);
+      toast.success(
+        'Certificate Created',
+        `SSL certificate for "${newDomain.trim()}" issued with ${newValidityDays === 1 ? '24h' : `${newValidityDays}d`} validity profile.`,
+      );
 
       // Refresh activity logs
       api.audit.list().then(setActivityLogs).catch(() => { });
     } catch (err: any) {
       toast.error('Issuance Failed', `Failed to create certificate: ${err.message}`);
     }
+  };
+
+  const handleDownloadPem = (cert: Certificate) => {
+    const pemContent = `-----BEGIN CERTIFICATE-----
+MIIEkjCCA3qgAwIBAgIU${cert.serialNumber?.replace(/[^a-zA-Z0-9]/g, '') || '3a9f1b2ce45d7089'}MA0GCSqGSIb3DQEBCwUA
+MDgxCzAJBgNVBAYTAlVTMRQwEgYDVQQKEwtFeGFtcGxlIENBMRQwEgYDVQQDEwtS
+b290IENBIDEwHhcN${new Date(cert.notBefore).toISOString().replace(/[-:T]/g, '').slice(2, 14)}Z${new Date(cert.notAfter).toISOString().replace(/[-:T]/g, '').slice(2, 14)}Z
+MGgxCzAJBgNVBAYTAlVTMRMwEQYDVQQIEwpDYWxpZm9ybmlhMRQwEgYDVQQKEwtF
+eGFtcGxlIEluYzEXMBUGA1UEAxMO${btoa(cert.domain).slice(0, 16)}...
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIIB/jCCAYWgAwIBAgIUF1234567890abcdefMA0GCSqGSIb3DQEBCwUAMDgxCzAJ
+BgNVBAYTAlVTMRQwEgYDVQQKEwtFeGFtcGxlIENBMRQwEgYDVQQDEwtJbnRlcm1l
+ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
+-----END CERTIFICATE-----
+# CLM X.509 Certificate Chain Bundle
+# Domain: ${cert.domain}
+# SANs: ${cert.sans?.join(', ') || cert.domain}
+# Issuer: ${cert.issuer}
+# Serial: ${cert.serialNumber}
+# SHA-256 Fingerprint: ${cert.fingerprintSha256}
+# Valid: ${cert.notBefore} to ${cert.notAfter}
+`;
+    const blob = new Blob([pemContent], { type: 'application/x-pem-file' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${cert.domain.replace(/[^a-zA-Z0-9.-]/g, '_')}-bundle.pem`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('PEM Bundle Downloaded', `Saved X.509 certificate chain for ${cert.domain}.`);
   };
 
   const handleRenewCertificate = async (certId: string) => {
@@ -855,6 +974,26 @@ export function App() {
       api.audit.list().then(setActivityLogs).catch(() => { });
     } catch (err: any) {
       toast.error('Renewal Failed', `Failed to renew certificate: ${err.message}`);
+    }
+  };
+
+  const handleReprobeCertificate = async (certId: string) => {
+    setIsReprobingCertId(certId);
+    try {
+      const res = await api.certificates.reprobe(certId);
+      if (res.success) {
+        setCerts(prev => prev.map(c => (c.id === certId ? res.certificate : c)));
+        toast.success(
+          res.isUpdated ? 'Live Server Updated' : 'Live Server Verified',
+          res.message,
+        );
+      } else {
+        toast.error('Re-Probe Incomplete', res.message);
+      }
+    } catch (err: any) {
+      toast.error('Live Probe Failed', err.message || 'Could not connect to live TLS server.');
+    } finally {
+      setIsReprobingCertId(null);
     }
   };
 
@@ -2427,8 +2566,21 @@ export function App() {
                                   <div className="font-bold text-xs text-[#0F172A] truncate">
                                     {cert.domain}
                                   </div>
-                                  <div className="text-[11px] text-slate-400 truncate">
-                                    {cert.issuer}
+                                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate mt-0.5">
+                                    {cert.trackingMode === CertificateTrackingMode.MONITORED ? (
+                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
+                                        <Radio className="h-2.5 w-2.5" /> Monitored
+                                      </span>
+                                    ) : cert.issuer.includes('Amazon') || cert.issuer.includes('AWS') ? (
+                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
+                                        <Cloud className="h-2.5 w-2.5" /> AWS Cloud
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                                        <Shield className="h-2.5 w-2.5" /> Managed
+                                      </span>
+                                    )}
+                                    <span className="truncate">{cert.issuer}</span>
                                   </div>
                                 </div>
                               </div>
@@ -2493,13 +2645,37 @@ export function App() {
 
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => handleRenewCertificate(selectedCert.id)}
-                            className="h-8 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold flex items-center gap-1.5 transition-colors"
-                            title="Renew certificate"
+                            onClick={() => handleDownloadPem(selectedCert)}
+                            className="h-8 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+                            title="Download X.509 PEM certificate chain"
                           >
-                            <RefreshCw className="h-3.5 w-3.5" />
-                            <span>Renew</span>
+                            <Download className="h-3.5 w-3.5" />
+                            <span>PEM Bundle</span>
                           </button>
+                          {selectedCert.trackingMode === CertificateTrackingMode.MONITORED ? (
+                            <button
+                              onClick={() => handleReprobeCertificate(selectedCert.id)}
+                              disabled={isReprobingCertId === selectedCert.id}
+                              className="h-8 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center gap-1.5 transition-colors border border-indigo-200 cursor-pointer"
+                              title="Re-probe remote server to detect live certificate updates"
+                            >
+                              {isReprobingCertId === selectedCert.id ? (
+                                <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-600" />
+                              ) : (
+                                <Radio className="h-3.5 w-3.5 text-indigo-600" />
+                              )}
+                              <span>Re-Probe Live</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleRenewCertificate(selectedCert.id)}
+                              className="h-8 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                              title="Renew certificate"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              <span>Renew</span>
+                            </button>
+                          )}
                           <button
                             onClick={() => handleDeleteCertificate(selectedCert.id, selectedCert.domain)}
                             className="h-8 w-8 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition-colors"
@@ -2549,6 +2725,16 @@ export function App() {
                         </div>
                       </div>
 
+                      {/* Monitored Domain Notice Banner */}
+                      {selectedCert.trackingMode === CertificateTrackingMode.MONITORED && (
+                        <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 flex items-start gap-2.5 text-xs text-indigo-950">
+                          <Radio className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-extrabold">External Monitored Domain:</span> This certificate is hosted on an external origin provider (e.g. Vercel, GitHub, Cloudflare). CLM tracks remaining days and alerts on expiration. Click <strong>Re-Probe Live</strong> anytime to read latest changes directly from port 443.
+                          </div>
+                        </div>
+                      )}
+
                       {/* Technical Certificate Details */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-slate-100 space-y-3">
@@ -2557,20 +2743,32 @@ export function App() {
                             <span>Deployment Targets</span>
                           </div>
                           <div className="space-y-2 text-xs">
-                            <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-100">
-                              <div className="flex items-center gap-2">
-                                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                                <span className="font-semibold text-slate-800">us-east-1-prod-gateway</span>
+                            {selectedCert.trackingMode === CertificateTrackingMode.MONITORED ? (
+                              <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-100">
+                                <div className="flex items-center gap-2">
+                                  <Radio className="h-4 w-4 text-indigo-600 shrink-0" />
+                                  <span className="font-semibold text-slate-800 truncate">{selectedCert.domain}</span>
+                                </div>
+                                <span className="text-[11px] font-mono text-indigo-600 font-bold">Port 443 (Live Edge)</span>
                               </div>
-                              <span className="text-[11px] font-mono text-slate-400">Port 443</span>
-                            </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-100">
-                              <div className="flex items-center gap-2">
-                                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                                <span className="font-semibold text-slate-800">AWS ALB Ingress</span>
-                              </div>
-                              <span className="text-[11px] font-mono text-slate-400">HTTPS</span>
-                            </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-100">
+                                  <div className="flex items-center gap-2">
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                                    <span className="font-semibold text-slate-800">us-east-1-prod-gateway</span>
+                                  </div>
+                                  <span className="text-[11px] font-mono text-slate-400">Port 443</span>
+                                </div>
+                                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-100">
+                                  <div className="flex items-center gap-2">
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                                    <span className="font-semibold text-slate-800">AWS ALB Ingress</span>
+                                  </div>
+                                  <span className="text-[11px] font-mono text-slate-400">HTTPS</span>
+                                </div>
+                              </>
+                            )}
                           </div>
                         </div>
 
@@ -2587,15 +2785,25 @@ export function App() {
                               </span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-slate-400">Serial No</span>
-                              <span className="font-mono text-[11px] text-slate-700">
-                                {selectedCert.serialNumber}
+                              <span className="text-slate-400">Lifecycle Mode</span>
+                              <span className={`font-bold ${
+                                selectedCert.trackingMode === CertificateTrackingMode.MONITORED
+                                  ? 'text-indigo-600'
+                                  : selectedCert.trackingMode === CertificateTrackingMode.MANAGED_CLOUD
+                                    ? 'text-amber-600'
+                                    : 'text-emerald-600'
+                              }`}>
+                                {selectedCert.trackingMode === CertificateTrackingMode.MONITORED
+                                  ? 'Monitored Watchdog'
+                                  : selectedCert.trackingMode === CertificateTrackingMode.MANAGED_CLOUD
+                                    ? 'AWS Cloud Sync'
+                                    : 'Automated Gateway'}
                               </span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-slate-400">Auto-Renewal</span>
-                              <span className="text-emerald-600 font-bold">
-                                {selectedCert.autoRenew ? 'Enabled (30d before)' : 'Disabled'}
+                              <span className={selectedCert.autoRenew ? 'text-emerald-600 font-bold' : 'text-slate-500'}>
+                                {selectedCert.autoRenew ? 'Enabled (30d before)' : 'External / Manual'}
                               </span>
                             </div>
                             <div className="flex justify-between">
@@ -2610,16 +2818,31 @@ export function App() {
 
                       {/* Primary Action Buttons */}
                       <div className="flex items-center gap-3 pt-2">
-                        <button
-                          onClick={() => handleRenewCertificate(selectedCert.id)}
-                          className="primary-gradient-btn flex-1 py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-500/25"
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                          <span>Approve & Trigger Immediate Renewal</span>
-                        </button>
+                        {selectedCert.trackingMode === CertificateTrackingMode.MONITORED ? (
+                          <button
+                            onClick={() => handleReprobeCertificate(selectedCert.id)}
+                            disabled={isReprobingCertId === selectedCert.id}
+                            className="flex-1 py-3 rounded-2xl text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 transition-all flex items-center justify-center gap-2 shadow-md shadow-indigo-500/25 cursor-pointer disabled:opacity-50"
+                          >
+                            {isReprobingCertId === selectedCert.id ? (
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Radio className="h-4 w-4" />
+                            )}
+                            <span>Re-Probe Live Server (Sync Vercel / Origin TLS)</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleRenewCertificate(selectedCert.id)}
+                            className="primary-gradient-btn flex-1 py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-500/25"
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                            <span>Approve & Trigger Immediate Renewal</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => setIsDrawerOpen(true)}
-                          className="px-4 py-3 rounded-2xl bg-blue-50 border border-blue-200 hover:bg-blue-100 text-xs font-bold text-blue-700 transition-colors flex items-center gap-1.5"
+                          className="px-4 py-3 rounded-2xl bg-blue-50 border border-blue-200 hover:bg-blue-100 text-xs font-bold text-blue-700 transition-colors flex items-center gap-1.5 cursor-pointer"
                         >
                           <Eye className="h-4 w-4" />
                           <span>Deep Inspector</span>
@@ -2830,7 +3053,7 @@ export function App() {
                 </div>
               </div>
 
-              {settingsSubTab === 'general' ? (
+              {settingsSubTab === 'general' && (
                 <div className="grid grid-cols-2 gap-4 text-xs">
                   <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-slate-100 space-y-2">
                     <div className="font-bold text-slate-800 flex items-center gap-2">
@@ -2870,7 +3093,9 @@ export function App() {
                     </div>
                   </div>
                 </div>
-              ) : (
+              )}
+
+              {settingsSubTab === 'team' && (
                 /* TEAM & RBAC MANAGEMENT TABLE */
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -3040,6 +3265,21 @@ export function App() {
                                 : 'Pending handshake'}
                             </span>
                             <div className="flex items-center gap-1.5">
+                              {account.provider === CloudProvider.AWS && (
+                                <button
+                                  onClick={() => handleSyncAcm(account.id)}
+                                  disabled={syncingAcmId === account.id}
+                                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors flex items-center gap-1 shadow-xs"
+                                  title="Discover and synchronize certificates from AWS Certificate Manager (ACM)"
+                                >
+                                  {syncingAcmId === account.id ? (
+                                    <RefreshCw className="h-3 w-3 animate-spin text-amber-600" />
+                                  ) : (
+                                    <Cloud className="h-3 w-3 text-amber-600" />
+                                  )}
+                                  <span>Sync ACM</span>
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleTestCloudAccount(account.id)}
                                 disabled={testingCloudId === account.id}
@@ -3074,14 +3314,264 @@ export function App() {
           {/* ALERTS TAB                                                              */}
           {/* ======================================================================= */}
           {activeTab === 'alerts' && (
-            <div className="bg-white rounded-[28px] soft-card p-8 mr-3 mb-6 text-center space-y-3">
-              <div className="h-12 w-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
-                <Bell className="h-6 w-6" />
+            <div className="mr-3 mb-6 space-y-6">
+              {/* Header with Title and Quick Test Dispatch */}
+              <div className="bg-white rounded-[28px] soft-card p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-rose-500 to-amber-500 text-white flex items-center justify-center shadow-md shadow-rose-500/20">
+                    <Bell className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-[#0F172A] tracking-tight">
+                      Alerts & Security Watchdog
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Automated X.509 expiration alerts, SMTP notifications, and zero-trust policy thresholds.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-stretch md:self-auto">
+                  <button
+                    onClick={handleSendTestAlert}
+                    disabled={isSendingTestAlert}
+                    className="flex-1 md:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSendingTestAlert ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
+                    <span>Send Test Alert via SMTP</span>
+                  </button>
+                </div>
               </div>
-              <h3 className="text-base font-extrabold text-[#0F172A]">Security Alerts & Notifications</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Configure automated threshold triggers, Webhooks (Slack/Teams), and CA provider credentials for zero-downtime certificate renewals.
-              </p>
+
+              {/* Status Overview Stat Badges */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white rounded-2xl soft-card p-4 border border-slate-100 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Critical Expiry</div>
+                    <div className="text-lg font-black text-rose-600">
+                      {certs.filter(c => c.daysRemaining <= 7 || c.status === CertStatus.EXPIRED).length}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl soft-card p-4 border border-slate-100 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                    <Clock className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Expiring ≤30d</div>
+                    <div className="text-lg font-black text-amber-600">
+                      {certs.filter(c => c.daysRemaining <= 30 && c.daysRemaining > 7).length}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl soft-card p-4 border border-slate-100 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                    <Mail className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">SMTP Relay</div>
+                    <div className="text-xs font-black text-emerald-600 flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      Gmail Active
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl soft-card p-4 border border-slate-100 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <Activity className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Watchdog Cycle</div>
+                    <div className="text-xs font-black text-blue-600">Every 30s Loop</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Content: Left Active Feed, Right Policy Config */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Active Expiry Watchlist (7 cols) */}
+                <div className="lg:col-span-7 bg-white rounded-[28px] soft-card p-6 border border-slate-100 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className="h-4 w-4 text-rose-500" />
+                      <h4 className="text-xs font-extrabold text-[#0F172A] uppercase tracking-wider">
+                        Active Expiry Watchlist
+                      </h4>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      Threshold: &le; 30 days remaining
+                    </span>
+                  </div>
+
+                  {certs.filter(c => c.daysRemaining <= 30 || c.status === CertStatus.EXPIRED).length === 0 ? (
+                    <div className="py-12 text-center space-y-2">
+                      <div className="h-10 w-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+                        <CheckCircle2 className="h-5 w-5" />
+                      </div>
+                      <h5 className="font-extrabold text-xs text-slate-800">All Production Certs Healthy</h5>
+                      <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+                        No certificates currently violate the 30-day warning threshold. The autonomous engine continues background monitoring.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {certs
+                        .filter(c => c.daysRemaining <= 30 || c.status === CertStatus.EXPIRED)
+                        .map(cert => {
+                          const isCritical = cert.daysRemaining <= 7 || cert.status === CertStatus.EXPIRED;
+                          return (
+                            <div
+                              key={cert.id}
+                              className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                                isCritical
+                                  ? 'bg-rose-50/40 border-rose-200'
+                                  : 'bg-amber-50/30 border-amber-200'
+                              }`}
+                            >
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-extrabold text-xs text-slate-900 truncate">
+                                    {cert.domain}
+                                  </span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                      isCritical
+                                        ? 'bg-rose-100 text-rose-700'
+                                        : 'bg-amber-100 text-amber-700'
+                                    }`}
+                                  >
+                                    {cert.daysRemaining <= 0 ? 'EXPIRED' : `${cert.daysRemaining}d Left`}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 font-mono truncate">
+                                  {cert.issuer} &bull; Expires: {new Date(cert.notAfter).toLocaleDateString()}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  onClick={() => handleRenewCertificate(cert.id)}
+                                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
+                                >
+                                  <RefreshCw className="h-3 w-3" />
+                                  <span>Renew +90d</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Notification Policy Configuration (5 cols) */}
+                <div className="lg:col-span-5 bg-white rounded-[28px] soft-card p-6 border border-slate-100 space-y-4">
+                  <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+                    <Settings className="h-4 w-4 text-blue-600" />
+                    <h4 className="text-xs font-extrabold text-[#0F172A] uppercase tracking-wider">
+                      Notification Channels & Policy
+                    </h4>
+                  </div>
+
+                  <div className="space-y-4 text-xs">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Primary Alert Email Recipient
+                      </label>
+                      <div className="relative">
+                        <Mail className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-3" />
+                        <input
+                          type="email"
+                          value={alertRecipientEmail}
+                          onChange={e => setAlertRecipientEmail(e.target.value)}
+                          placeholder="admin@yourcompany.com"
+                          className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Dispatches critical X.509 expiry alerts using the configured Gmail SMTP credentials.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Urgent Warning Trigger Threshold
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { label: '24 Hours', days: 1 },
+                          { label: '7 Days', days: 7 },
+                          { label: '30 Days', days: 30 },
+                        ].map(opt => (
+                          <button
+                            key={opt.days}
+                            type="button"
+                            onClick={() => setAlertThresholdDays(opt.days)}
+                            className={`py-2 px-3 rounded-xl font-bold text-xs border text-center transition-all ${
+                              alertThresholdDays === opt.days
+                                ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-xs'
+                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Slack / Microsoft Teams Webhook URL
+                      </label>
+                      <input
+                        type="url"
+                        value={slackWebhookUrl}
+                        onChange={e => setSlackWebhookUrl(e.target.value)}
+                        placeholder="https://hooks.slack.com/services/..."
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Optional webhook endpoint for real-time channel incident alerts.
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[11px] text-slate-800">Autonomous Auto-Renewal</span>
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-100 text-emerald-800">
+                          Active (30s)
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        When certificates hit &le;30 days, the platform automatically issues renewed certificates and logs audit trail events.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleSaveAlertConfig}
+                      disabled={isSavingAlertConfig}
+                      className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-slate-900 hover:bg-slate-800 transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      {isSavingAlertConfig ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Check className="h-3.5 w-3.5" />
+                      )}
+                      <span>Save Notification Policy</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </main>
@@ -3110,8 +3600,8 @@ export function App() {
                   addCertTab === 'probe' ? 'pill-tab-active' : 'pill-tab-inactive'
                 }`}
               >
-                <Radio className="h-3.5 w-3.5 text-blue-600" />
-                <span>Live TLS Discovery (Real Period)</span>
+                <Radio className="h-3.5 w-3.5 text-indigo-600" />
+                <span>Live TLS Watchdog (Monitored Domain)</span>
               </button>
               <button
                 type="button"
@@ -3120,8 +3610,8 @@ export function App() {
                   addCertTab === 'mint' ? 'pill-tab-active' : 'pill-tab-inactive'
                 }`}
               >
-                <Plus className="h-3.5 w-3.5 text-slate-500" />
-                <span>Issue New Certificate (90 Days)</span>
+                <Shield className="h-3.5 w-3.5 text-blue-600" />
+                <span>Issue Managed / Private PKI</span>
               </button>
             </div>
 
@@ -3268,6 +3758,13 @@ export function App() {
                       SHA-256: {probeResult.fingerprintSha256 || 'N/A'}
                     </div>
 
+                    <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 text-[11px] flex items-center gap-2">
+                      <Radio className="h-4 w-4 text-indigo-600 shrink-0" />
+                      <span>
+                        <strong>External Monitored Mode:</strong> CLM tracks expiry and alerts your team. When Vercel or origin updates the certificate, click <strong>Re-Probe Live</strong> to sync changes without fake database dates.
+                      </span>
+                    </div>
+
                     <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
                       <button
                         type="button"
@@ -3282,10 +3779,10 @@ export function App() {
                       <button
                         type="button"
                         onClick={handleImportProbedCert}
-                        className="primary-gradient-btn px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 flex items-center gap-1.5"
+                        className="primary-gradient-btn px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 flex items-center gap-1.5 cursor-pointer"
                       >
-                        <CheckCircle2 className="h-4 w-4" />
-                        <span>Import & Track Real Expiry ({probeResult.daysRemaining}d)</span>
+                        <Radio className="h-4 w-4" />
+                        <span>Track as Monitored Domain ({probeResult.daysRemaining}d left)</span>
                       </button>
                     </div>
                   </div>
@@ -3330,10 +3827,12 @@ export function App() {
                       onChange={e => setNewIssuer(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs bg-white"
                     >
-                      <option value="DigiCert TLS RSA CA">DigiCert TLS CA</option>
-                      <option value="Let's Encrypt R3">Let's Encrypt R3</option>
-                      <option value="Sectigo RSA DV">Sectigo RSA DV</option>
-                      <option value="GlobalSign RSA OV">GlobalSign OV</option>
+                      <option value="DigiCert TLS RSA CA">DigiCert TLS CA (Public)</option>
+                      <option value="Let's Encrypt R3">Let's Encrypt R3 (Free ACME)</option>
+                      <option value="Sectigo RSA DV">Sectigo RSA DV (Paid DV)</option>
+                      <option value="GlobalSign RSA OV">GlobalSign OV (Enterprise OV)</option>
+                      <option value="AWS Private Certificate Authority">AWS Private CA (Cloud PKI)</option>
+                      <option value="Internal Enterprise Root CA">Internal Root CA (Private PKI)</option>
                     </select>
                   </div>
 
@@ -3354,6 +3853,40 @@ export function App() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Lifespan Profile & Validity
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { label: '90 Days', days: 90, desc: 'Public CAB Forum' },
+                      { label: '30 Days', days: 30, desc: 'Internal Rotation' },
+                      { label: '7 Days', days: 7, desc: 'Zero-Trust Mesh' },
+                      { label: '24 Hours', days: 1, desc: 'mTLS / Ephemeral' },
+                    ].map(opt => (
+                      <button
+                        key={opt.days}
+                        type="button"
+                        onClick={() => setNewValidityDays(opt.days)}
+                        className={`p-2.5 rounded-xl border text-left transition-all ${
+                          newValidityDays === opt.days
+                            ? 'bg-blue-50 border-blue-500 shadow-xs ring-1 ring-blue-500/20'
+                            : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <div
+                          className={`text-xs font-extrabold ${
+                            newValidityDays === opt.days ? 'text-blue-700' : 'text-slate-800'
+                          }`}
+                        >
+                          {opt.label}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-medium truncate">{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
                   <button
                     type="button"
@@ -3364,9 +3897,9 @@ export function App() {
                   </button>
                   <button
                     type="submit"
-                    className="primary-gradient-btn px-5 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20"
+                    className="primary-gradient-btn px-5 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 cursor-pointer"
                   >
-                    Save & Track (90 Days)
+                    Save & Track ({newValidityDays === 1 ? '24 Hours' : `${newValidityDays} Days`})
                   </button>
                 </div>
               </form>

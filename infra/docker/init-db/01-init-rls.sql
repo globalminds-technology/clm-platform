@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS certificates (
     sans TEXT [] NOT NULL DEFAULT ARRAY[]::TEXT [],
     status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
     key_algorithm VARCHAR(50) NOT NULL DEFAULT 'RSA_2048',
+    tracking_mode VARCHAR(50) NOT NULL DEFAULT 'MANAGED_GATEWAY',
     issuer VARCHAR(255) NOT NULL,
     serial_number VARCHAR(128) NOT NULL,
     fingerprint_sha256 VARCHAR(64) NOT NULL,

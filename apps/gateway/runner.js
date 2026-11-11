@@ -7,12 +7,12 @@
 const http = require('http');
 
 let CONTROL_PLANE_URL = process.env.CLM_CONTROL_PLANE_URL || 'http://localhost:4000/api/v1';
-let GATEWAY_ID = process.env.CLM_GATEWAY_ID || '20000000-0000-0000-0000-000000000001';
+let GATEWAY_ID = process.env.CLM_GATEWAY_ID || '89c3aa16-2ca8-49f7-8090-7cc054c2b17b';
 const ENROLLMENT_TOKEN = process.env.CLM_ENROLLMENT_TOKEN || '';
 const WEB_PORT = parseInt(process.env.CLM_GATEWAY_WEB_PORT || '8080', 10);
 const VERSION = '1.0.0';
 const HOSTNAME = process.env.HOSTNAME || 'gw-prod-01.acme.internal';
-const IP_ADDRESS = '10.0.1.15';
+const IP_ADDRESS = '::ffff:10.0.1.15';
 const INTERVAL_MS = 30000; // 30-second heartbeat per architecture spec
 
 let lastHeartbeatAt = null;

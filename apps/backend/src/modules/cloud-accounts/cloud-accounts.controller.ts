@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../../shared/auth/jwt-auth.guard';
 import { RolesGuard } from '../../shared/auth/roles.guard';
 import { Roles } from '../../shared/auth/roles.decorator';
 import { CurrentTenant } from '../../shared/tenancy/current-tenant.decorator';
+import { CurrentUser } from '../../shared/auth/current-user.decorator';
 import { Role } from '@clm/shared-types';
 
 @ApiTags('Cloud Accounts')
@@ -55,6 +56,19 @@ export class CloudAccountsController {
     @Param('id') id: string,
   ) {
     return this.service.testConnection(tenantId, id);
+  }
+
+  @Post(':id/sync-acm')
+  @Roles(Role.TENANT_ADMIN, Role.SECURITY_LEAD, Role.DEVOPS_ENGINEER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Synchronize and import certificates from AWS ACM into tenant lifecycle' })
+  @ApiResponse({ status: 200, description: 'Discovered certificates synchronized' })
+  async syncAcm(
+    @CurrentTenant() tenantId: string,
+    @Param('id') id: string,
+    @CurrentUser('email') userEmail?: string,
+  ) {
+    return this.service.syncAcmCertificates(tenantId, id, userEmail || 'admin@alphacorp.com');
   }
 
   @Delete(':id')

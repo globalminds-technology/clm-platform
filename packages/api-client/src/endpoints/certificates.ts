@@ -7,6 +7,7 @@ import {
   type RenewCertificateRequest,
   type RevokeCertificateRequest,
   type LiveTlsProbeResult,
+  type ReprobeCertificateResponse,
 } from '@clm/shared-types';
 
 export class CertificatesEndpoint {
@@ -14,6 +15,10 @@ export class CertificatesEndpoint {
 
   probe(domain: string, port = 443): Promise<LiveTlsProbeResult> {
     return this.http.post<LiveTlsProbeResult>('certificates/probe', { domain, port });
+  }
+
+  reprobe(id: string): Promise<ReprobeCertificateResponse> {
+    return this.http.post<ReprobeCertificateResponse>(`certificates/${id}/reprobe`, {});
   }
 
   list(filters?: CertificateFilterParams): Promise<Certificate[]> {
