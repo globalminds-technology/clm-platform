@@ -58,3 +58,20 @@ export interface TestCloudAccountResponse {
   discoveredResourcesCount?: number;
 }
 
+export interface SyncAcmResponse {
+  success: boolean;
+  message: string;
+  isLiveAcm: boolean;
+  discovered: number;
+  updated: number;
+  certificates: {
+    domain: string;
+    sans: string[];
+    issuer: string;
+    status: string;
+    daysRemaining: number;
+    inUseBy?: string[];
+  }[];
+}
+
+

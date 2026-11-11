@@ -4,6 +4,7 @@ import {
   type Certificate,
   type CertificateFilterParams,
   type LiveTlsProbeResult,
+  type ReprobeCertificateResponse,
   AuditActorType,
   AuditAction,
 } from '@clm/shared-types';
@@ -154,6 +155,51 @@ export class CertificatesService {
       metadata: { domain: updated.domain },
     });
     return updated;
+  }
+
+  async reprobe(tenantId: string, id: string): Promise<ReprobeCertificateResponse> {
+    const existing = await this.findById(tenantId, id);
+    const prevDays = existing.daysRemaining;
+
+    // Connect and probe live TLS peer
+    const liveProbe = await this.probeLive(existing.domain, 443);
+
+    // Update in repository with live server data
+    const updated = await this.certificatesRepository.updateFromLiveProbe(tenantId, id, liveProbe);
+    if (!updated) {
+      throw new NotFoundException(`Certificate with ID '${id}' not found`);
+    }
+
+    const isUpdated = updated.daysRemaining !== prevDays || updated.serialNumber !== existing.serialNumber;
+
+    await this.auditLogsService.log(tenantId, {
+      actorType: AuditActorType.USER,
+      actorId: 'user-active',
+      action: AuditAction.CERT_DISCOVERED,
+      resourceType: 'CERTIFICATE',
+      resourceId: id,
+      metadata: {
+        domain: existing.domain,
+        probedIssuer: liveProbe.issuer,
+        prevDays,
+        currentDays: updated.daysRemaining,
+        isUpdated,
+      },
+    });
+
+    const msg = isUpdated
+      ? `Live server updated! New certificate active with ${updated.daysRemaining} days remaining (Expires: ${new Date(updated.notAfter).toLocaleDateString()}).`
+      : `Synchronized with live server. Remote host is currently serving certificate valid for ${updated.daysRemaining} days (Expires: ${new Date(updated.notAfter).toLocaleDateString()}).`;
+
+    return {
+      success: true,
+      message: msg,
+      isUpdated,
+      probedDomain: existing.domain,
+      previousDaysRemaining: prevDays,
+      currentDaysRemaining: updated.daysRemaining,
+      certificate: updated,
+    };
   }
 
   async delete(tenantId: string, id: string): Promise<void> {

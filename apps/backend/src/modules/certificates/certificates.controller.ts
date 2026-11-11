@@ -75,13 +75,25 @@ export class CertificatesController {
         @Post(':id/renew')
         @HttpCode(HttpStatus.OK)
         @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER)
-        @ApiOperation({ summary: 'Trigger renewal workflow for a certificate' })
+        @ApiOperation({ summary: 'Trigger renewal workflow for a managed certificate' })
         @ApiResponse({ status: 200, description: 'Renewal triggered' })
         async renew(
           @CurrentTenant() tenantId: string,
           @Param('id') id: string,
         ): Promise < Certificate > {
           return this.certificatesService.renew(tenantId, id);
+        }
+
+        @Post(':id/reprobe')
+        @HttpCode(HttpStatus.OK)
+        @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER)
+        @ApiOperation({ summary: 'Re-probe external live host to synchronize real TLS certificate data' })
+        @ApiResponse({ status: 200, description: 'Live probe completed and database updated' })
+        async reprobe(
+          @CurrentTenant() tenantId: string,
+          @Param('id') id: string,
+        ) {
+          return this.certificatesService.reprobe(tenantId, id);
         }
 
         @Delete(':id')

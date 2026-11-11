@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "description": "Enterprise Certificate Lifecycle Management SaaS Monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",

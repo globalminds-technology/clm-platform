@@ -1,6 +1,6 @@
 import { IsString, IsNotEmpty, IsArray, IsOptional, IsEnum, IsBoolean, IsNumber } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { KeyAlgorithm, ValidationMethod, type CreateCertificateRequest } from '@clm/shared-types';
+import { KeyAlgorithm, ValidationMethod, CertificateTrackingMode, type CreateCertificateRequest } from '@clm/shared-types';
 
 export class CreateCertificateDto implements CreateCertificateRequest {
   @ApiProperty({ description: 'Primary Fully Qualified Domain Name (FQDN)', example: 'api.example.com' })
@@ -24,6 +24,11 @@ export class CreateCertificateDto implements CreateCertificateRequest {
   @ApiProperty({ enum: ValidationMethod, default: ValidationMethod.DNS_01 })
   @IsEnum(ValidationMethod)
   validationMethod!: ValidationMethod;
+
+  @ApiPropertyOptional({ enum: CertificateTrackingMode, default: CertificateTrackingMode.MANAGED_GATEWAY })
+  @IsEnum(CertificateTrackingMode)
+  @IsOptional()
+  trackingMode?: CertificateTrackingMode;
 
   @ApiPropertyOptional({ default: true })
   @IsBoolean()
