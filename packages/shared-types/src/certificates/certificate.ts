@@ -14,7 +14,7 @@ export interface Certificate {
   notAfter: string;
   daysRemaining: number;
   autoRenew: boolean;
-  renewBeforeDays: number; d
+  renewBeforeDays: number;
   gatewayId?: string | null;
   deployTargetCount: number;
   lastRenewedAt?: string | null;
