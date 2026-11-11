@@ -1,6 +1,13 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { TenantContextService } from '../../shared/tenancy/tenant-context.service';
-import { CertStatus, KeyAlgorithm, type Certificate, type CertificateFilterParams } from '@clm/shared-types';
+import {
+  CertStatus,
+  KeyAlgorithm,
+  CertificateTrackingMode,
+  type Certificate,
+  type CertificateFilterParams,
+  type LiveTlsProbeResult,
+} from '@clm/shared-types';
 import { type CreateCertificateDto } from './dto/create-certificate.dto';
 
 @Injectable()
@@ -59,12 +66,14 @@ export class CertificatesRepository {
         status = CertStatus.EXPIRING_SOON;
       }
 
+      const trackingMode = dto.trackingMode || CertificateTrackingMode.MANAGED_GATEWAY;
+
       const res = await client.query(
         `INSERT INTO certificates (
-          tenant_id, domain, sans, status, key_algorithm, issuer,
+          tenant_id, domain, sans, status, key_algorithm, tracking_mode, issuer,
           serial_number, fingerprint_sha256, not_before, not_after,
           auto_renew, renew_before_days, gateway_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING *;`,
         [
           tenantId,
@@ -72,6 +81,7 @@ export class CertificatesRepository {
           dto.sans || [dto.domain],
           status,
           dto.keyAlgorithm || KeyAlgorithm.RSA_2048,
+          trackingMode,
           issuer,
           serialNumber,
           fingerprint,
@@ -87,8 +97,147 @@ export class CertificatesRepository {
     });
   }
 
+  async upsertDiscovered(
+    tenantId: string,
+    data: {
+      domain: string;
+      sans?: string[];
+      status?: CertStatus;
+      keyAlgorithm?: KeyAlgorithm;
+      trackingMode?: CertificateTrackingMode;
+      issuer: string;
+      serialNumber?: string;
+      fingerprintSha256?: string;
+      notBefore: Date;
+      notAfter: Date;
+      autoRenew?: boolean;
+      renewBeforeDays?: number;
+    },
+  ): Promise<{ cert: Certificate; isNew: boolean }> {
+    return this.tenantContextService.withTenantContext(tenantId, async client => {
+      const existing = await client.query(
+        'SELECT id, tracking_mode FROM certificates WHERE tenant_id = $1 AND domain = $2 LIMIT 1;',
+        [tenantId, data.domain],
+      );
+
+      const notBefore = data.notBefore;
+      const notAfter = data.notAfter;
+      const daysRemaining = Math.max(0, Math.ceil((notAfter.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+      let status = data.status || CertStatus.ACTIVE;
+      if (daysRemaining <= 0) {
+        status = CertStatus.EXPIRED;
+      } else if (daysRemaining <= 30) {
+        status = CertStatus.EXPIRING_SOON;
+      }
+
+      const trackingMode =
+        data.trackingMode ||
+        (data.issuer.includes('Amazon') || data.issuer.includes('AWS')
+          ? CertificateTrackingMode.MANAGED_CLOUD
+          : CertificateTrackingMode.MANAGED_GATEWAY);
+
+      if (existing.rows.length > 0) {
+        const id = existing.rows[0].id;
+        const res = await client.query(
+          `UPDATE certificates
+           SET sans = $1, status = $2, key_algorithm = $3, tracking_mode = $4, issuer = $5,
+               serial_number = $6, fingerprint_sha256 = $7, not_before = $8, not_after = $9,
+               updated_at = NOW()
+           WHERE id = $10
+           RETURNING *;`,
+          [
+            data.sans || [data.domain],
+            status,
+            data.keyAlgorithm || KeyAlgorithm.RSA_2048,
+            trackingMode,
+            data.issuer,
+            data.serialNumber || Math.random().toString(16).substring(2, 18),
+            data.fingerprintSha256 || Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+            notBefore.toISOString(),
+            notAfter.toISOString(),
+            id,
+          ],
+        );
+        return { cert: this.mapRowToCertificate(res.rows[0]), isNew: false };
+      } else {
+        const res = await client.query(
+          `INSERT INTO certificates (
+            tenant_id, domain, sans, status, key_algorithm, tracking_mode, issuer,
+            serial_number, fingerprint_sha256, not_before, not_after,
+            auto_renew, renew_before_days
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          RETURNING *;`,
+          [
+            tenantId,
+            data.domain,
+            data.sans || [data.domain],
+            status,
+            data.keyAlgorithm || KeyAlgorithm.RSA_2048,
+            trackingMode,
+            data.issuer,
+            data.serialNumber || Math.random().toString(16).substring(2, 18),
+            data.fingerprintSha256 || Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+            notBefore.toISOString(),
+            notAfter.toISOString(),
+            data.autoRenew ?? true,
+            data.renewBeforeDays ?? 30,
+          ],
+        );
+        return { cert: this.mapRowToCertificate(res.rows[0]), isNew: true };
+      }
+    });
+  }
+
+  async updateFromLiveProbe(
+    tenantId: string,
+    id: string,
+    liveData: LiveTlsProbeResult,
+  ): Promise<Certificate | null> {
+    return this.tenantContextService.withTenantContext(tenantId, async client => {
+      const notBefore = new Date(liveData.notBefore);
+      const notAfter = new Date(liveData.notAfter);
+      const daysRemaining = Math.max(0, Math.ceil((notAfter.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+      let status = CertStatus.ACTIVE;
+      if (daysRemaining <= 0) status = CertStatus.EXPIRED;
+      else if (daysRemaining <= 30) status = CertStatus.EXPIRING_SOON;
+
+      const res = await client.query(
+        `UPDATE certificates
+         SET issuer = $1, serial_number = $2, fingerprint_sha256 = $3,
+             not_before = $4, not_after = $5, sans = $6, status = $7,
+             tracking_mode = 'MONITORED', updated_at = NOW()
+         WHERE id = $8
+         RETURNING *;`,
+        [
+          liveData.issuer,
+          liveData.serialNumber,
+          liveData.fingerprintSha256,
+          notBefore.toISOString(),
+          notAfter.toISOString(),
+          liveData.sans || [liveData.domain],
+          status,
+          id,
+        ],
+      );
+
+      if (res.rows.length === 0) return null;
+      return this.mapRowToCertificate(res.rows[0]);
+    });
+  }
+
   async renew(tenantId: string, id: string): Promise<Certificate | null> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
+      const check = await client.query(
+        'SELECT tracking_mode, domain FROM certificates WHERE id = $1;',
+        [id],
+      );
+
+      if (check.rows.length > 0 && check.rows[0].tracking_mode === CertificateTrackingMode.MONITORED) {
+        throw new ForbiddenException(
+          `Domain "${check.rows[0].domain}" is an external monitored domain. Renewal must be performed on the origin host (e.g. Vercel, GitHub). Use "Re-Probe Live Server" to sync live server updates.`,
+        );
+      }
+
       const notBefore = new Date();
       const notAfter = new Date(Date.now() + 90 * 86400000);
 
@@ -124,6 +273,7 @@ export class CertificatesRepository {
       sans: row.sans || [row.domain],
       status: row.status as CertStatus,
       keyAlgorithm: row.key_algorithm as KeyAlgorithm,
+      trackingMode: (row.tracking_mode || CertificateTrackingMode.MANAGED_GATEWAY) as CertificateTrackingMode,
       issuer: row.issuer,
       serialNumber: row.serial_number,
       fingerprintSha256: row.fingerprint_sha256,

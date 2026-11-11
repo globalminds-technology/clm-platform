@@ -8,5 +8,6 @@ export * from './endpoints/deployments';
 export * from './endpoints/audit';
 export * from './endpoints/auth';
 export * from './endpoints/plans';
+export * from './endpoints/scheduler';
 export * from './mock/mock-client';
 

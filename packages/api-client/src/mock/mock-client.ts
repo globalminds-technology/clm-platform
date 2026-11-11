@@ -184,6 +184,20 @@ export class MockApiClient {
       cert.notAfter = new Date(Date.now() + 90 * 86400000).toISOString();
       return { ...cert };
     },
+    reprobe: async (id: string): Promise<any> => {
+      await this.delay();
+      const cert = this._certificates.find(c => c.id === id);
+      if (!cert) throw new Error('Certificate not found');
+      return {
+        success: true,
+        message: `Synchronized with live server for ${cert.domain}`,
+        isUpdated: false,
+        probedDomain: cert.domain,
+        previousDaysRemaining: cert.daysRemaining,
+        currentDaysRemaining: cert.daysRemaining,
+        certificate: { ...cert },
+      };
+    },
     revoke: async (id: string): Promise<void> => {
       await this.delay();
       const cert = this._certificates.find(c => c.id === id);

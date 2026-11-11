@@ -23,3 +23,11 @@ export enum ValidationMethod {
   MANUAL = 'MANUAL',
 }
 
+export enum CertificateTrackingMode {
+  MONITORED = 'MONITORED', // External 3rd party domain (read-only TLS watchdog)
+  MANAGED_CLOUD = 'MANAGED_CLOUD', // AWS ACM, CloudFront, Route53 zero-touch
+  MANAGED_GATEWAY = 'MANAGED_GATEWAY', // Satellite Gateway on-prem / VM webserver
+  PRIVATE_PKI = 'PRIVATE_PKI', // Internal service mesh / mTLS
+}
+
+

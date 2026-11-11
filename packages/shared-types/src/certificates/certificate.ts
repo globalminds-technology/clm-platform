@@ -1,4 +1,4 @@
-import { CertStatus, KeyAlgorithm, ValidationMethod } from './cert-status';
+import { CertStatus, KeyAlgorithm, ValidationMethod, CertificateTrackingMode } from './cert-status';
 
 export interface Certificate {
   id: string;
@@ -7,6 +7,7 @@ export interface Certificate {
   sans: string[];
   status: CertStatus;
   keyAlgorithm: KeyAlgorithm;
+  trackingMode?: CertificateTrackingMode;
   issuer: string;
   serialNumber: string;
   fingerprintSha256: string;
@@ -54,6 +55,7 @@ export interface CreateCertificateRequest {
   sans?: string[];
   keyAlgorithm: KeyAlgorithm;
   validationMethod: ValidationMethod;
+  trackingMode?: CertificateTrackingMode;
   autoRenew?: boolean;
   renewBeforeDays?: number;
   gatewayId?: string;
@@ -63,6 +65,17 @@ export interface CreateCertificateRequest {
   serialNumber?: string;
   fingerprintSha256?: string;
 }
+
+export interface ReprobeCertificateResponse {
+  success: boolean;
+  message: string;
+  isUpdated: boolean;
+  probedDomain: string;
+  previousDaysRemaining: number;
+  currentDaysRemaining: number;
+  certificate: Certificate;
+}
+
 
 export interface RenewCertificateRequest {
   forceRenew?: boolean;
