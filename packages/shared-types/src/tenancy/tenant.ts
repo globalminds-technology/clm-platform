@@ -74,7 +74,7 @@ export interface RegisterTenantRequest {
   adminEmail: string;
   password: string;
   adminFirstName: string;
-  adminLastName: string;
+  adminLastName?: string;
   marketplaceProvider?: CloudMarketplace;
 }
 

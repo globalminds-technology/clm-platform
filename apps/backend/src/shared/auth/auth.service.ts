@@ -1,9 +1,14 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 import { UsersService } from '../../modules/users/users.service';
 import { CryptoService } from '../crypto/crypto.service';
+import { MailService } from '../mail/mail.service';
+import { TenantContextService } from '../tenancy/tenant-context.service';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { type User } from '@clm/shared-types';
 
 export interface AuthTokens {
@@ -26,7 +31,42 @@ export class AuthService {
     private readonly cryptoService: CryptoService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly mailService: MailService,
+    private readonly tenantContextService: TenantContextService,
   ) {}
+
+
+  createTokensForUser(user: { id: string; email: string; tenantId: string; role: any }): AuthTokens {
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      tenantId: user.tenantId,
+      role: user.role,
+    };
+
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: process.env.NODE_ENV === 'production' ? '15m' : '7d',
+    });
+
+    const refreshSecret = this.configService.get<string>(
+      'JWT_REFRESH_SECRET',
+      'clm-refresh-jwt-secret-key-change-in-production-32bytes!',
+    );
+
+    const refreshToken = this.jwtService.sign(
+      { sub: user.id, tenantId: user.tenantId },
+      {
+        secret: refreshSecret,
+        expiresIn: '7d',
+      },
+    );
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: 900,
+    };
+  }
 
   async login(dto: LoginDto): Promise<AuthResult> {
     const userWithPassword = await this.usersService.findByEmailGlobal(dto.email);
@@ -46,29 +86,7 @@ export class AuthService {
     // Update last login timestamp in tenant context
     await this.usersService.updateLastLogin(userWithPassword.tenantId, userWithPassword.id);
 
-    const payload = {
-      sub: userWithPassword.id,
-      email: userWithPassword.email,
-      tenantId: userWithPassword.tenantId,
-      role: userWithPassword.role,
-    };
-
-    const accessToken = this.jwtService.sign(payload, {
-      expiresIn: '15m',
-    });
-
-    const refreshSecret = this.configService.get<string>(
-      'JWT_REFRESH_SECRET',
-      'clm-refresh-jwt-secret-key-change-in-production-32bytes!',
-    );
-
-    const refreshToken = this.jwtService.sign(
-      { sub: userWithPassword.id, tenantId: userWithPassword.tenantId },
-      {
-        secret: refreshSecret,
-        expiresIn: '7d',
-      },
-    );
+    const tokens = this.createTokensForUser(userWithPassword);
 
     // Strip out passwordHash
     const { passwordHash: _, ...safeUser } = userWithPassword;
@@ -76,11 +94,7 @@ export class AuthService {
     this.logger.log(`User logged in successfully: ${userWithPassword.id} (${userWithPassword.email})`);
 
     return {
-      tokens: {
-        accessToken,
-        refreshToken,
-        expiresIn: 900, // 15 minutes in seconds
-      },
+      tokens,
       user: safeUser,
     };
   }
@@ -117,5 +131,88 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
   }
+
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string; devCode?: string }> {
+    const user = await this.usersService.findByEmailGlobal(dto.email);
+    if (!user) {
+      // Return generic message to prevent email account enumeration attacks
+      return {
+        message: 'If an account with that email exists, password reset instructions have been sent.',
+      };
+    }
+
+    // Generate random 6-digit numeric verification code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const tokenHash = crypto.createHash('sha256').update(resetCode).digest('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes expiration
+
+    await this.tenantContextService.withSystemContext(async client => {
+      // Invalidate existing unused tokens for this email
+      await client.query(
+        'UPDATE password_reset_tokens SET used_at = NOW() WHERE email = $1 AND used_at IS NULL;',
+        [dto.email.toLowerCase().trim()],
+      );
+
+      await client.query(
+        `INSERT INTO password_reset_tokens (email, token_hash, expires_at)
+         VALUES ($1, $2, $3);`,
+        [dto.email.toLowerCase().trim(), tokenHash, expiresAt],
+      );
+    });
+
+    // Dispatch email (or fallback to console box)
+    await this.mailService.sendPasswordResetEmail({
+      email: user.email,
+      name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+      resetCode,
+      expiresInMinutes: 15,
+    });
+
+    this.logger.log(`Password reset code generated and dispatched for email: ${dto.email}`);
+
+    return {
+      message: 'If an account with that email exists, password reset instructions have been sent.',
+      devCode: process.env.NODE_ENV !== 'production' ? resetCode : undefined,
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
+    const tokenHash = crypto.createHash('sha256').update(dto.token.trim()).digest('hex');
+
+    const tokenRecord = await this.tenantContextService.withSystemContext(async client => {
+      const res = await client.query(
+        `SELECT * FROM password_reset_tokens 
+         WHERE email = $1 AND token_hash = $2 AND used_at IS NULL AND expires_at > NOW()
+         ORDER BY created_at DESC LIMIT 1;`,
+        [dto.email.toLowerCase().trim(), tokenHash],
+      );
+      return res.rows[0] || null;
+    });
+
+    if (!tokenRecord) {
+      throw new BadRequestException('Invalid or expired password reset verification code. Please request a new code.');
+    }
+
+    // Hash the new password with Argon2id OWASP parameters
+    const newPasswordHash = await this.cryptoService.hashPassword(dto.newPassword);
+
+    await this.tenantContextService.withSystemContext(async client => {
+      await client.query(
+        'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE email = $2;',
+        [newPasswordHash, dto.email.toLowerCase().trim()],
+      );
+      await client.query(
+        'UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1;',
+        [tokenRecord.id],
+      );
+    });
+
+    this.logger.log(`Password reset successfully executed for user: ${dto.email}`);
+
+    return {
+      message: 'Password has been successfully reset. You can now sign in with your new password.',
+    };
+  }
 }
+
 

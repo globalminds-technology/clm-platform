@@ -55,5 +55,52 @@ export class CryptoService {
 
     return crypto.timingSafeEqual(expectedBuf, signatureBuf);
   }
+
+  /**
+   * Encrypts plaintext data using AES-256-GCM authenticated encryption (for Cloud Credentials)
+   */
+  encryptAes256Gcm(
+    plaintext: string,
+    secretKeyHex?: string,
+  ): { ciphertext: string; iv: string; tag: string } {
+    const rawKey = secretKeyHex
+      ? Buffer.from(secretKeyHex, 'hex')
+      : crypto.createHash('sha256').update(process.env.ENCRYPTION_MASTER_KEY || 'clm-platform-default-master-encryption-key-32b').digest();
+
+    const iv = crypto.randomBytes(12); // 96-bit IV standard for GCM
+    const cipher = crypto.createCipheriv('aes-256-gcm', rawKey, iv);
+
+    let ciphertext = cipher.update(plaintext, 'utf8', 'hex');
+    ciphertext += cipher.final('hex');
+    const tag = cipher.getAuthTag().toString('hex');
+
+    return {
+      ciphertext,
+      iv: iv.toString('hex'),
+      tag,
+    };
+  }
+
+  /**
+   * Decrypts AES-256-GCM authenticated ciphertext
+   */
+  decryptAes256Gcm(
+    ciphertext: string,
+    ivHex: string,
+    tagHex: string,
+    secretKeyHex?: string,
+  ): string {
+    const rawKey = secretKeyHex
+      ? Buffer.from(secretKeyHex, 'hex')
+      : crypto.createHash('sha256').update(process.env.ENCRYPTION_MASTER_KEY || 'clm-platform-default-master-encryption-key-32b').digest();
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', rawKey, Buffer.from(ivHex, 'hex'));
+    decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+
+    let decrypted = decipher.update(ciphertext, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  }
 }
+
 

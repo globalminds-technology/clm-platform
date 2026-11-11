@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { TenantContextService } from '../../shared/tenancy/tenant-context.service';
 import {
   GatewayStatus,
@@ -36,6 +36,11 @@ export class GatewaysRepository {
 
   async create(tenantId: string, data: { name: string; targetTypesSupported: DeployTargetType[]; labels?: Record<string, any> }): Promise<Gateway> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
+      const tenantCheck = await client.query('SELECT status FROM tenants WHERE id = $1;', [tenantId]);
+      if (tenantCheck.rows[0]?.status === 'PENDING_APPROVAL') {
+        throw new ForbiddenException('Gateway enrollment is locked. Organization is pending security review.');
+      }
+
       const res = await client.query(
         `INSERT INTO gateways (
           tenant_id, name, hostname, ip_address, version, status, target_types_supported, labels

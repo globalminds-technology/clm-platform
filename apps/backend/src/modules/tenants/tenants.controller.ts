@@ -45,13 +45,21 @@ export class TenantsController {
     return this.tenantsService.create(createTenantDto);
   }
 
+  @Get('metrics')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Get aggregated tenant usage and billing metrics (Super Admin only)' })
+  @ApiResponse({ status: 200, description: 'Tenant metrics returned' })
+  async getMetrics() {
+    return this.tenantsService.getMetrics();
+  }
+
   @Get()
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'List all tenant organizations (Super Admin only)' })
   @ApiResponse({ status: 200, description: 'List of tenants returned' })
-  async findAll(): Promise < Tenant[] > {
-      return this.tenantsService.findAll();
-    }
+  async findAll(): Promise<Tenant[]> {
+    return this.tenantsService.findAll();
+  }
 
     @Get(':id')
     @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN)

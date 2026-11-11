@@ -96,6 +96,16 @@ export class UsersRepository {
     });
   }
 
+  async updatePasswordGlobal(email: string, passwordHash: string): Promise<void> {
+    return this.tenantContextService.withSystemContext(async client => {
+      await client.query(
+        'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE email = $2;',
+        [passwordHash, email.toLowerCase().trim()],
+      );
+    });
+  }
+
+
   private mapRowToUser(row: any): User {
     return {
       id: row.id,

@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import * as tls from 'tls';
 import {
   type Certificate,
   type CertificateFilterParams,
+  type LiveTlsProbeResult,
   AuditActorType,
   AuditAction,
 } from '@clm/shared-types';
@@ -15,6 +17,102 @@ export class CertificatesService {
     private readonly certificatesRepository: CertificatesRepository,
     private readonly auditLogsService: AuditLogsService,
   ) {}
+
+  async probeLive(domain: string, port = 443, timeoutMs = 8000): Promise<LiveTlsProbeResult> {
+    const firstPart = domain.replace(/^https?:\/\//i, '').split('/')[0] || '';
+    const cleanDomain = (firstPart.split(':')[0] || '').trim();
+    if (!cleanDomain) {
+      throw new BadRequestException('A valid hostname or domain name is required for live TLS probing.');
+    }
+
+    return new Promise((resolve, reject) => {
+      const socket = tls.connect(
+        {
+          host: cleanDomain,
+          port,
+          servername: cleanDomain,
+          rejectUnauthorized: false,
+          timeout: timeoutMs,
+        },
+        () => {
+          try {
+            const peerCert = socket.getPeerCertificate(true);
+            socket.destroy();
+
+            if (!peerCert || !peerCert.valid_to) {
+              return reject(new NotFoundException(`No TLS certificate returned from ${cleanDomain}:${port}`));
+            }
+
+            const notBefore = new Date(peerCert.valid_from);
+            const notAfter = new Date(peerCert.valid_to);
+            const now = new Date();
+            const daysRemaining = Math.max(0, Math.ceil((notAfter.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+
+            let sans: string[] = [];
+            if (peerCert.subjectaltname) {
+              sans = peerCert.subjectaltname
+                .split(',')
+                .map(s => s.trim().replace(/^DNS:/i, ''))
+                .filter(Boolean);
+            }
+            if (sans.length === 0 && cleanDomain) {
+              sans = [cleanDomain];
+            }
+
+            const rawO = peerCert.issuer?.O;
+            const issuerO = Array.isArray(rawO) ? rawO.join(', ') : rawO;
+            const rawCN = peerCert.issuer?.CN;
+            const issuerCN = Array.isArray(rawCN) ? rawCN.join(', ') : rawCN;
+
+            let issuerStr = issuerO || issuerCN || 'Unknown CA';
+            if (issuerCN && issuerO && issuerCN !== issuerO) {
+              issuerStr = `${issuerO} (${issuerCN})`;
+            }
+
+            const rawSubjCN = peerCert.subject?.CN;
+            const subjCN = Array.isArray(rawSubjCN) ? rawSubjCN.join(', ') : rawSubjCN;
+
+            let keyAlgorithm = 'RSA_2048';
+            if (peerCert.bits) {
+              if (peerCert.asn1Curve) {
+                keyAlgorithm = `ECDSA_${peerCert.asn1Curve.toUpperCase()}`;
+              } else {
+                keyAlgorithm = `RSA_${peerCert.bits}`;
+              }
+            }
+
+            resolve({
+              domain: cleanDomain,
+              port,
+              subject: subjCN || cleanDomain,
+              issuer: issuerStr,
+              sans,
+              notBefore: notBefore.toISOString(),
+              notAfter: notAfter.toISOString(),
+              daysRemaining,
+              serialNumber: peerCert.serialNumber || Math.random().toString(16).substring(2, 18),
+              fingerprintSha256: peerCert.fingerprint256?.replace(/:/g, '').toLowerCase() || '',
+              keyAlgorithm,
+              isExpired: notAfter.getTime() < now.getTime(),
+            });
+          } catch (err) {
+            socket.destroy();
+            reject(err);
+          }
+        },
+      );
+
+      socket.on('error', err => {
+        socket.destroy();
+        reject(new BadRequestException(`TLS Probe failed for ${cleanDomain}:${port} - ${err.message}`));
+      });
+
+      socket.on('timeout', () => {
+        socket.destroy();
+        reject(new BadRequestException(`Connection to ${cleanDomain}:${port} timed out after ${timeoutMs}ms`));
+      });
+    });
+  }
 
   async findAll(tenantId: string, filters?: CertificateFilterParams): Promise<Certificate[]> {
     return this.certificatesRepository.findAll(tenantId, filters);

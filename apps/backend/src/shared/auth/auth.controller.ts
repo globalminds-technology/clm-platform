@@ -14,6 +14,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { Response, Request } from 'express';
 import { AuthService, AuthResult } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Public } from './public.decorator';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
@@ -38,12 +40,9 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const { tenant, adminUser } = await this.tenantsService.register(dto);
-    const loginResult = await this.authService.login({
-      email: dto.adminEmail,
-      password: dto.password,
-    });
+    const tokens = this.authService.createTokensForUser(adminUser);
 
-    res.cookie('clm_refresh_token', loginResult.tokens.refreshToken, {
+    res.cookie('clm_refresh_token', tokens.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
@@ -51,18 +50,18 @@ export class AuthController {
       path: '/api/v1/auth',
     });
 
-    res.cookie('clm_access_token', loginResult.tokens.accessToken, {
+    res.cookie('clm_access_token', tokens.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 15 * 60 * 1000,
+      maxAge: process.env.NODE_ENV === 'production' ? 15 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
 
     return {
       tenant,
       user: adminUser,
-      tokens: loginResult.tokens,
+      tokens,
     };
   }
 
@@ -100,6 +99,25 @@ export class AuthController {
   }
 
   @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request password reset verification code' })
+  @ApiResponse({ status: 200, description: 'Verification code dispatched' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset account password with verification code' })
+  @ApiResponse({ status: 200, description: 'Password reset successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired code' })
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
+  }
+
+  @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rotate refresh token and issue new access token' })
@@ -128,7 +146,7 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 15 * 60 * 1000,
+      maxAge: process.env.NODE_ENV === 'production' ? 15 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
 

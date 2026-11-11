@@ -9,5 +9,6 @@ export * from './components/TopHeader';
 export * from './components/DataTable';
 export * from './components/Drawer';
 export * from './components/ConfirmDialog';
+export * from './components/PasswordInput';
 export * from './components/Toast';
 

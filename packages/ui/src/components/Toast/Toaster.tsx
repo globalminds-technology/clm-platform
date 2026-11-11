@@ -20,7 +20,7 @@ export function Toaster({ position = 'top-right' }: ToasterProps) {
   return (
     <div
       aria-live="polite"
-      className={`fixed z-[9999] pointer-events-none flex flex-col gap-2.5 max-w-sm w-full transition-all duration-300 ${positionClasses[position]}`}
+      className={`fixed z-[9999] pointer-events-none flex flex-col gap-3 max-w-md w-full px-4 sm:px-0 transition-all duration-300 ${positionClasses[position]}`}
     >
       {toasts.map(item => (
         <Toast key={item.id} item={item} />
