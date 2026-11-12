@@ -144,6 +144,25 @@ export class GatewaysRepository {
     });
   }
 
+  async createCommand(
+    tenantId: string,
+    gatewayId: string,
+    type: string,
+    payload: Record<string, any>,
+    signature: string,
+  ): Promise<GatewayCommand> {
+    return this.tenantContextService.withTenantContext(tenantId, async client => {
+      const res = await client.query(
+        `INSERT INTO gateway_commands (
+          tenant_id, gateway_id, type, status, payload, signature, created_at
+        ) VALUES ($1, $2, $3, 'PENDING', $4, $5, NOW())
+        RETURNING *;`,
+        [tenantId, gatewayId, type, JSON.stringify(payload), signature],
+      );
+      return this.mapRowToCommand(res.rows[0]);
+    });
+  }
+
   private mapRowToGateway(row: any): Gateway {
     return {
       id: row.id,

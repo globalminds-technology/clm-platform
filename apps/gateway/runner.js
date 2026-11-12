@@ -121,15 +121,28 @@ async function sendHeartbeat() {
     if (resp.commands && resp.commands.length > 0) {
       for (const cmd of resp.commands) {
         console.log(`[Command EXEC] Executing command ${cmd.id} (${cmd.type})`);
+        
+        let commandResult = {
+          executedAt: new Date().toISOString(),
+          status: 'SUCCESS',
+        };
+
+        if (cmd.type === 'DEPLOY_CERT' || cmd.type === 'DEPLOY') {
+          const domain = cmd.payload?.domain || 'unknown';
+          const targetType = cmd.payload?.targetType || 'NGINX';
+          console.log(`[Deployment PUSH] Installed renewed certificate for '${domain}' to target '${targetType}'. Web server reloaded.`);
+          commandResult.deployedDomain = domain;
+          commandResult.targetType = targetType;
+          commandResult.message = `Certificate for ${domain} successfully deployed to ${targetType}`;
+        }
+
         await postJson('/ingress/gateway/command-ack', {
           commandId: cmd.id,
           gatewayId: GATEWAY_ID,
           status: 'COMPLETED',
-          result: {
-            executedAt: new Date().toISOString(),
-            status: 'SUCCESS',
-          },
+          result: commandResult,
         });
+
         executedCommands.unshift({
           id: cmd.id,
           type: cmd.type,

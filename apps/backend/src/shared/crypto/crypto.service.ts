@@ -101,6 +101,93 @@ export class CryptoService {
     decrypted += decipher.final('utf8');
     return decrypted;
   }
+
+  /**
+   * Generates an X.509 PKCS#10 Certificate Signing Request (CSR) and private key pair
+   * populated with tenant organizational metadata and Subject Alternative Names (SANs)
+   */
+  async generateCsrAndKey(options: {
+    domain: string;
+    sans?: string[];
+    keyAlgorithm?: 'RSA_2048' | 'RSA_4096';
+    organization?: string;
+    organizationalUnit?: string;
+    country?: string;
+    state?: string;
+    locality?: string;
+    emailAddress?: string;
+  }): Promise<{ privateKeyPem: string; publicKeyPem: string; csrPem: string }> {
+    const forge = await import('node-forge');
+
+    const keyBits = options.keyAlgorithm === 'RSA_4096' ? 4096 : 2048;
+
+    // Generate Key Pair asynchronously
+    const keyPair = await new Promise<any>((resolve, reject) => {
+      forge.pki.rsa.generateKeyPair({ bits: keyBits, workers: -1 }, (err: any, keys: any) => {
+        if (err) return reject(err);
+        resolve(keys);
+      });
+    });
+
+    // Create CSR
+    const csr = forge.pki.createCertificationRequest();
+    csr.publicKey = keyPair.publicKey;
+
+    // Build Distinguished Name (DN) Subject Attributes
+    const attrs = [
+      { name: 'commonName', value: options.domain },
+      { name: 'organizationName', value: options.organization || 'CLM Platform Customer' },
+      { name: 'countryName', value: (options.country || 'US').substring(0, 2).toUpperCase() },
+    ];
+
+    if (options.organizationalUnit) {
+      attrs.push({ name: 'organizationalUnitName', value: options.organizationalUnit });
+    }
+    if (options.state) {
+      attrs.push({ name: 'stateOrProvinceName', value: options.state });
+    }
+    if (options.locality) {
+      attrs.push({ name: 'localityName', value: options.locality });
+    }
+    if (options.emailAddress) {
+      attrs.push({ name: 'emailAddress', value: options.emailAddress });
+    }
+
+    csr.setSubject(attrs);
+
+    // Add Subject Alternative Names (SANs) extension
+    const altNames = Array.from(new Set([options.domain, ...(options.sans || [])])).map(name => ({
+      type: 2, // DNS name
+      value: name,
+    }));
+
+    csr.setAttributes([
+      {
+        name: 'extensionRequest',
+        extensions: [
+          {
+            name: 'subjectAltName',
+            altNames,
+          },
+        ],
+      },
+    ]);
+
+    // Sign the CSR using the newly generated private key with SHA-256
+    csr.sign(keyPair.privateKey, forge.md.sha256.create());
+
+    // Export to PEM strings
+    const privateKeyPem = forge.pki.privateKeyToPem(keyPair.privateKey);
+    const publicKeyPem = forge.pki.publicKeyToPem(keyPair.publicKey);
+    const csrPem = forge.pki.certificationRequestToPem(csr);
+
+    return {
+      privateKeyPem,
+      publicKeyPem,
+      csrPem,
+    };
+  }
 }
+
 
 

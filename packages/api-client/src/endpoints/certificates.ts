@@ -8,6 +8,7 @@ import {
   type RevokeCertificateRequest,
   type LiveTlsProbeResult,
   type ReprobeCertificateResponse,
+  type RenewalContextResponse,
 } from '@clm/shared-types';
 
 export class CertificatesEndpoint {
@@ -19,6 +20,14 @@ export class CertificatesEndpoint {
 
   reprobe(id: string): Promise<ReprobeCertificateResponse> {
     return this.http.post<ReprobeCertificateResponse>(`certificates/${id}/reprobe`, {});
+  }
+
+  getRenewalContext(id: string): Promise<RenewalContextResponse> {
+    return this.http.get<RenewalContextResponse>(`certificates/${id}/renewal-context`);
+  }
+
+  generateRenewalCsr(id: string, overrides?: Record<string, any>): Promise<{ csrPem: string; publicKeyPem: string }> {
+    return this.http.post<{ csrPem: string; publicKeyPem: string }>(`certificates/${id}/generate-csr`, overrides);
   }
 
   list(filters?: CertificateFilterParams): Promise<Certificate[]> {
