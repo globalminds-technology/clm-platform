@@ -41,3 +41,4 @@ keys/
 *.pem
 *.crt
 
+.neon

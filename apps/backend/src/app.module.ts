@@ -19,7 +19,7 @@ import { LifecycleSchedulerModule } from './modules/lifecycle-scheduler/lifecycl
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['apps/backend/.env', '.env'],
+      envFilePath: ['.env.local', 'apps/backend/.env.local', 'apps/backend/.env', '.env'],
     }),
     DatabaseModule,
     TenancyModule,
