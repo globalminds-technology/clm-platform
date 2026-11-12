@@ -111,4 +111,35 @@ export class GatewaysService {
     this.logger.log(`Command ${dto.commandId} acknowledged by gateway ${dto.gatewayId} with status ${dto.status}`);
     return { success: true };
   }
+
+  /**
+   * Dispatches a signed DEPLOY_CERT command to a target gateway
+   */
+  async dispatchDeployCommand(
+    tenantId: string,
+    gatewayId: string,
+    payload: {
+      certificateId: string;
+      domain: string;
+      certificatePem: string;
+      privateKeyPem?: string;
+      targetType: string;
+      targetConfig: Record<string, any>;
+    },
+  ): Promise<GatewayCommand> {
+    const rawPayload = JSON.stringify(payload);
+    const signature = this.cryptoService.signHmac(
+      rawPayload,
+      process.env.GATEWAY_SIGNING_KEY || 'clm-default-gateway-signing-key-32b',
+    );
+
+    this.logger.log(`Dispatching DEPLOY_CERT command for domain '${payload.domain}' to gateway ${gatewayId}`);
+    return this.gatewaysRepository.createCommand(
+      tenantId,
+      gatewayId,
+      'DEPLOY_CERT',
+      payload,
+      signature,
+    );
+  }
 }

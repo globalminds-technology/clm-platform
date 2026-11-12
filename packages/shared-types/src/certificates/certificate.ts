@@ -77,9 +77,46 @@ export interface ReprobeCertificateResponse {
 }
 
 
+export interface RenewalContextResponse {
+  certificateId: string;
+  domain: string;
+  sans: string[];
+  currentKeyAlgorithm: KeyAlgorithm;
+  currentIssuer: string;
+  daysRemaining: number;
+  organizationMetadata: {
+    organizationName: string;
+    department?: string;
+    country: string;
+    state?: string;
+    locality?: string;
+    contactEmail?: string;
+  };
+  connectedCloudAccounts: Array<{
+    id: string;
+    name: string;
+    provider: 'AWS' | 'AZURE' | 'GCP';
+    region?: string;
+    maskedSecret: string;
+    awsAccountId?: string;
+    azureTenantId?: string;
+    gcpProjectId?: string;
+  }>;
+  suggestedValidationMethod: ValidationMethod;
+  subscriptionTier: string;
+  isPaidPlan: boolean;
+  maxCertificates: number;
+  currentCertificatesCount: number;
+  allowedCaProviders: string[];
+}
+
 export interface RenewCertificateRequest {
   forceRenew?: boolean;
   renewBeforeDays?: number;
+  keyAlgorithm?: KeyAlgorithm;
+  cloudAccountId?: string;
+  csrOverridePem?: string;
+  caProvider?: 'LETS_ENCRYPT' | 'DIGICERT' | 'SECTIGO' | 'AWS_ACM';
 }
 
 export interface RevokeCertificateRequest {

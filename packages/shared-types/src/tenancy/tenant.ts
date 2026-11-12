@@ -33,6 +33,25 @@ export interface PlanDefinition {
   effectiveDate?: string;
 }
 
+export interface TenantOrganizationMetadata {
+  organizationName?: string;
+  department?: string;
+  country?: string; // 2-letter ISO country code e.g. 'US', 'IN'
+  state?: string;
+  locality?: string;
+  contactEmail?: string;
+  defaultKeyAlgorithm?: string; // 'RSA_2048' | 'RSA_4096' | 'ECDSA_P256'
+  defaultCaProvider?: 'LETS_ENCRYPT' | 'DIGICERT' | 'SECTIGO' | 'AWS_ACM';
+  defaultChallengeType?: 'DNS_01' | 'HTTP_01';
+}
+
+export interface TenantSettings {
+  defaultRenewalWindowDays?: number;
+  slackWebhookUrl?: string | null;
+  emailAlerts?: boolean;
+  orgMetadata?: TenantOrganizationMetadata;
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -46,11 +65,7 @@ export interface Tenant {
   awsAccountId?: string | null;
   awsCustomerIdentifier?: string | null;
   awsProductCode?: string | null;
-  settings?: {
-    defaultRenewalWindowDays?: number;
-    slackWebhookUrl?: string | null;
-    emailAlerts?: boolean;
-  };
+  settings?: TenantSettings;
   createdAt: string;
   updatedAt: string;
 }

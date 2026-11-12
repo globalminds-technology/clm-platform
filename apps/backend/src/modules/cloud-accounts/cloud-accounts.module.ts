@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { CloudAccountsController } from './cloud-accounts.controller';
 import { CloudAccountsService } from './cloud-accounts.service';
 import { CloudAccountsRepository } from './cloud-accounts.repository';
@@ -7,7 +7,7 @@ import { CertificatesModule } from '../certificates/certificates.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 
 @Module({
-  imports: [CryptoModule, CertificatesModule, AuditLogsModule],
+  imports: [CryptoModule, forwardRef(() => CertificatesModule), AuditLogsModule],
   controllers: [CloudAccountsController],
   providers: [CloudAccountsService, CloudAccountsRepository],
   exports: [CloudAccountsService, CloudAccountsRepository],

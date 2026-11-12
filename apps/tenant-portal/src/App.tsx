@@ -157,6 +157,14 @@ export function App() {
   const [newAlgorithm, setNewAlgorithm] = useState<KeyAlgorithm>(KeyAlgorithm.RSA_2048);
   const [newValidityDays, setNewValidityDays] = useState(90);
 
+  // Renewal Context & Modal State
+  const [renewingCert, setRenewingCert] = useState<Certificate | null>(null);
+  const [renewalContext, setRenewalContext] = useState<any | null>(null);
+  const [isLoadingRenewalContext, setIsLoadingRenewalContext] = useState(false);
+  const [isSubmittingRenewal, setIsSubmittingRenewal] = useState(false);
+  const [selectedCloudAccountId, setSelectedCloudAccountId] = useState<string>('');
+  const [customKeyAlgorithm, setCustomKeyAlgorithm] = useState<string>('RSA_2048');
+
   // Live TLS Probe State
   const [probeDomain, setProbeDomain] = useState('google.com');
   const [probePort, setProbePort] = useState(443);
@@ -885,7 +893,15 @@ export function App() {
       toast.success('Live Certificate Imported', `Imported ${created.domain} with actual remaining period of ${created.daysRemaining} days.`);
       api.audit.list().then(setActivityLogs).catch(() => {});
     } catch (err: any) {
-      toast.error('Import Failed', err.message || 'Failed to save discovered certificate to database.');
+      const msg = err.message || '';
+      if (msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('capacity') || msg.toLowerCase().includes('limit reached')) {
+        toast.warning(
+          'Certificate Limit Reached',
+          `You have reached the maximum certificate monitoring quota for your ${currentTenant?.tier || 'Community'} plan. To monitor more endpoints, please upgrade to a Professional or Enterprise plan.`,
+        );
+      } else {
+        toast.error('Import Failed', err.message || 'Failed to save discovered certificate to database.');
+      }
     }
   };
 
@@ -929,7 +945,15 @@ export function App() {
       // Refresh activity logs
       api.audit.list().then(setActivityLogs).catch(() => { });
     } catch (err: any) {
-      toast.error('Issuance Failed', `Failed to create certificate: ${err.message}`);
+      const msg = err.message || '';
+      if (msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('capacity') || msg.toLowerCase().includes('limit reached')) {
+        toast.warning(
+          'Certificate Limit Reached',
+          `You have reached the maximum certificate monitoring quota for your ${currentTenant?.tier || 'Community'} plan. To issue or monitor more certificates, please upgrade to a Professional or Enterprise plan.`,
+        );
+      } else {
+        toast.error('Issuance Failed', `Failed to create certificate: ${err.message}`);
+      }
     }
   };
 
@@ -966,14 +990,90 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
     toast.success('PEM Bundle Downloaded', `Saved X.509 certificate chain for ${cert.domain}.`);
   };
 
-  const handleRenewCertificate = async (certId: string) => {
+  const openRenewalModal = async (cert: Certificate) => {
+    setRenewingCert(cert);
+    setIsLoadingRenewalContext(true);
+    setRenewalContext(null);
     try {
-      const updated = await api.certificates.renew(certId);
-      setCerts(prev => prev.map(c => (c.id === certId ? updated : c)));
-      toast.success('Certificate Renewed', `Validity extended by 90 days for ${updated.domain || 'certificate'}.`);
-      api.audit.list().then(setActivityLogs).catch(() => { });
+      const ctx = await api.certificates.getRenewalContext(cert.id);
+      setRenewalContext(ctx);
+      if (ctx && ctx.connectedCloudAccounts && ctx.connectedCloudAccounts.length > 0) {
+        const firstAccount = ctx.connectedCloudAccounts[0];
+        if (firstAccount) {
+          setSelectedCloudAccountId(firstAccount.id);
+        }
+      }
+      setCustomKeyAlgorithm(cert.keyAlgorithm || 'RSA_2048');
+    } catch {
+      // Fallback context if backend offline/local mock
+      setRenewalContext({
+        certificateId: cert.id,
+        domain: cert.domain,
+        sans: cert.sans,
+        currentKeyAlgorithm: cert.keyAlgorithm,
+        currentIssuer: cert.issuer,
+        daysRemaining: cert.daysRemaining,
+        organizationMetadata: {
+          organizationName: currentTenant?.name || 'CLM Customer Corp',
+          department: 'DevOps & Security',
+          country: 'US',
+          state: 'California',
+          locality: 'San Francisco',
+          contactEmail: currentUser?.email || 'security@acme.internal',
+        },
+        connectedCloudAccounts: [
+          {
+            id: 'mock-aws-account-01',
+            name: 'AWS Primary Production',
+            provider: 'AWS',
+            region: 'us-east-1',
+            maskedSecret: 'AKI************4Q',
+            awsAccountId: '123456789012',
+          },
+        ],
+        suggestedValidationMethod: 'DNS_01',
+      });
+      setSelectedCloudAccountId('mock-aws-account-01');
+      setCustomKeyAlgorithm(cert.keyAlgorithm || 'RSA_2048');
+    } finally {
+      setIsLoadingRenewalContext(false);
+    }
+  };
+
+  const handleExecuteRenewal = async () => {
+    if (!renewingCert) return;
+    setIsSubmittingRenewal(true);
+    try {
+      const updated = await api.certificates.renew(renewingCert.id, {
+        keyAlgorithm: customKeyAlgorithm as any,
+        cloudAccountId: selectedCloudAccountId || undefined,
+      });
+      setCerts(prev => prev.map(c => (c.id === renewingCert.id ? updated : c)));
+      toast.success(
+        'Renewal Executed',
+        `Successfully generated fresh CSR, verified DNS-01 via Cloud, and renewed ${updated.domain}.`,
+      );
+      api.audit.list().then(setActivityLogs).catch(() => {});
+      setRenewingCert(null);
     } catch (err: any) {
       toast.error('Renewal Failed', `Failed to renew certificate: ${err.message}`);
+    } finally {
+      setIsSubmittingRenewal(false);
+    }
+  };
+
+  const handleRenewCertificate = async (certId: string) => {
+    const cert = certs.find(c => c.id === certId);
+    if (cert) {
+      openRenewalModal(cert);
+    } else {
+      try {
+        const updated = await api.certificates.renew(certId);
+        setCerts(prev => prev.map(c => (c.id === certId ? updated : c)));
+        toast.success('Certificate Renewed', `Validity extended by 90 days.`);
+      } catch (err: any) {
+        toast.error('Renewal Failed', err.message);
+      }
     }
   };
 
@@ -4604,6 +4704,157 @@ ${selectedCert.fingerprintSha256.substring(0, 48)}
                 </button>
               </div>
             </form>
+          </div>
+        </Modal>
+
+        {/* Certificate Renewal Pre-fill & Approval Modal */}
+        <Modal
+          isOpen={!!renewingCert}
+          onClose={() => {
+            if (!isSubmittingRenewal) setRenewingCert(null);
+          }}
+          title={`Renew Certificate: ${renewingCert?.domain || ''}`}
+        >
+          <div className="p-6 space-y-5">
+            {isLoadingRenewalContext ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-3">
+                <RefreshCw className="h-8 w-8 text-blue-600 animate-spin" />
+                <p className="text-xs font-medium text-slate-500">Loading pre-saved tenant identity & cloud credentials...</p>
+              </div>
+            ) : renewalContext ? (
+              <div className="space-y-4">
+                <div className="bg-blue-50/70 border border-blue-200/60 rounded-2xl p-4 flex items-start gap-3">
+                  <ShieldCheck className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-bold text-blue-900">Stored Tenant & CA Identity Matched</h4>
+                    <p className="text-[11px] text-blue-700/80 mt-0.5">
+                      Your saved company registration details and connected cloud DNS credentials will automatically generate the CSR and fulfill the validation challenge.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Subscription Tier Badge & Quota Info */}
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-700">Plan Tier:</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      renewalContext.isPaidPlan
+                        ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      {renewalContext.subscriptionTier || 'COMMUNITY'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-medium">
+                    Usage: <span className="font-bold text-slate-800">{renewalContext.currentCertificatesCount || 1}</span> / {renewalContext.maxCertificates || 50} Certs
+                  </div>
+                </div>
+
+                {/* Stored Organization Info */}
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Pre-Filled CSR Subject Data (From Tenant Onboarding)
+                  </span>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Organization (O):</span>
+                      <span className="font-semibold text-slate-800">{renewalContext.organizationMetadata.organizationName}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Organizational Unit (OU):</span>
+                      <span className="font-semibold text-slate-800">{renewalContext.organizationMetadata.department || 'SecOps'}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Country (C):</span>
+                      <span className="font-semibold text-slate-800">{renewalContext.organizationMetadata.country || 'US'}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Notification Email:</span>
+                      <span className="font-semibold text-slate-800">{renewalContext.organizationMetadata.contactEmail || 'security@tenant.internal'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Connected Cloud Provider & DNS Validation */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Select Automated Cloud DNS Provider for Challenge
+                  </label>
+                  {renewalContext.connectedCloudAccounts && renewalContext.connectedCloudAccounts.length > 0 ? (
+                    <div className="space-y-2">
+                      {renewalContext.connectedCloudAccounts.map((acc: any) => (
+                        <label
+                          key={acc.id}
+                          className={`flex items-center justify-between p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                            selectedCloudAccountId === acc.id
+                              ? 'border-blue-600 bg-blue-50/50 text-blue-900 shadow-xs'
+                              : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <input
+                              type="radio"
+                              name="cloud_account_select"
+                              checked={selectedCloudAccountId === acc.id}
+                              onChange={() => setSelectedCloudAccountId(acc.id)}
+                              className="text-blue-600 focus:ring-blue-500"
+                            />
+                            <div>
+                              <span className="font-bold">{acc.name}</span>
+                              <span className="text-[10px] text-slate-500 block font-mono">
+                                Provider: {acc.provider} &bull; Region: {acc.region || 'global'} &bull; Key: {acc.maskedSecret}
+                              </span>
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                            Auto DNS-01 Ready
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                      No cloud accounts connected yet. The renewal will proceed via HTTP-01 challenge fallback.
+                    </div>
+                  )}
+                </div>
+
+                {/* Key Algorithm Selection */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Key Algorithm for New Key Pair
+                  </label>
+                  <select
+                    value={customKeyAlgorithm}
+                    onChange={e => setCustomKeyAlgorithm(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 bg-white"
+                  >
+                    <option value="RSA_2048">RSA 2048-bit (Standard High-Compatibility)</option>
+                    <option value="RSA_4096">RSA 4096-bit (Military Grade / Financial)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    disabled={isSubmittingRenewal}
+                    onClick={() => setRenewingCert(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-900 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmittingRenewal}
+                    onClick={handleExecuteRenewal}
+                    className="primary-gradient-btn px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/25 cursor-pointer"
+                  >
+                    {isSubmittingRenewal && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                    <span>{isSubmittingRenewal ? 'Issuing & Deploying...' : 'Approve & Issue Certificate'}</span>
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </Modal>
       </div>

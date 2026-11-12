@@ -91,13 +91,27 @@ func sendHeartbeat(c *client.IngressClient, s *scanner.TLSScanner, d *deployer.A
 					"fingerprint": cert.FingerprintSHA256,
 				}, "")
 			}
-		case "DEPLOY":
+		case "DEPLOY", "DEPLOY_CERT":
 			domain, _ := cmd.Payload["domain"].(string)
-			target, _ := cmd.Payload["target"].(string)
-			res, err := d.DeployCertificate(domain, target, "", "")
+			target, _ := cmd.Payload["targetType"].(string)
+			if target == "" {
+				target, _ = cmd.Payload["target"].(string)
+			}
+			certPEM, _ := cmd.Payload["certificatePem"].(string)
+			keyPEM, _ := cmd.Payload["privateKeyPem"].(string)
+
+			log.Printf("[Deploy EXEC] Deploying certificate for %s to target: %s", domain, target)
+			res, err := d.DeployCertificate(domain, target, certPEM, keyPEM)
 			if err != nil {
 				c.AcknowledgeCommand(cmd.ID, cfg.GatewayID, "FAILED", nil, err.Error())
 			} else {
+				c.AcknowledgeCommand(cmd.ID, cfg.GatewayID, "COMPLETED", map[string]interface{}{
+					"status":      res.Status,
+					"resourceArn": res.ResourceARN,
+					"message":     res.Message,
+					"deployedAt":  res.DeployedAt.Format(time.RFC3339),
+				}, "")
+			}
 				c.AcknowledgeCommand(cmd.ID, cfg.GatewayID, "COMPLETED", map[string]interface{}{
 					"status":      res.Status,
 					"resourceArn": res.ResourceARN,

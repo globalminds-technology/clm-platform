@@ -46,9 +46,21 @@ export class CertificatesRepository {
 
   async create(tenantId: string, dto: CreateCertificateDto): Promise<Certificate> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
-      const tenantCheck = await client.query('SELECT status FROM tenants WHERE id = $1;', [tenantId]);
-      if (tenantCheck.rows[0]?.status === 'PENDING_APPROVAL') {
+      const tenantCheck = await client.query('SELECT status, tier, max_certificates FROM tenants WHERE id = $1;', [tenantId]);
+      const tenantRow = tenantCheck.rows[0];
+      if (tenantRow?.status === 'PENDING_APPROVAL') {
         throw new ForbiddenException('Certificate issuance is locked. Organization is pending security review.');
+      }
+
+      // Check tier quota limit (Free vs Paid)
+      const countRes = await client.query('SELECT COUNT(*) FROM certificates WHERE status != $1;', [CertStatus.REVOKED]);
+      const currentActiveCount = parseInt(countRes.rows[0].count, 10) || 0;
+      const maxAllowed = tenantRow?.max_certificates || 50;
+
+      if (currentActiveCount >= maxAllowed) {
+        throw new ForbiddenException(
+          `Certificate quota limit reached (${currentActiveCount}/${maxAllowed}). Free Community plan allows up to 50 active certificates. Please upgrade to Professional or Enterprise plan.`,
+        );
       }
 
       const notBefore = dto.notBefore ? new Date(dto.notBefore) : new Date();
@@ -160,6 +172,19 @@ export class CertificatesRepository {
         );
         return { cert: this.mapRowToCertificate(res.rows[0]), isNew: false };
       } else {
+        // Enforce quota limits for new monitored / discovered certificate additions
+        const tenantCheck = await client.query('SELECT tier, max_certificates FROM tenants WHERE id = $1;', [tenantId]);
+        const tenantRow = tenantCheck.rows[0];
+        const countRes = await client.query('SELECT COUNT(*) FROM certificates WHERE status != $1;', [CertStatus.REVOKED]);
+        const currentActiveCount = parseInt(countRes.rows[0].count, 10) || 0;
+        const maxAllowed = tenantRow?.max_certificates || 50;
+
+        if (currentActiveCount >= maxAllowed) {
+          throw new ForbiddenException(
+            `Certificate monitoring quota limit reached (${currentActiveCount}/${maxAllowed}). Your ${tenantRow?.tier || 'COMMUNITY'} plan has reached its capacity. Please upgrade to a higher plan to monitor more domains.`,
+          );
+        }
+
         const res = await client.query(
           `INSERT INTO certificates (
             tenant_id, domain, sans, status, key_algorithm, tracking_mode, issuer,

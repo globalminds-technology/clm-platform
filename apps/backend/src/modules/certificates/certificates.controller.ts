@@ -72,17 +72,47 @@ export class CertificatesController {
           return this.certificatesService.create(tenantId, createDto);
         }
 
-        @Post(':id/renew')
-        @HttpCode(HttpStatus.OK)
-        @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER)
-        @ApiOperation({ summary: 'Trigger renewal workflow for a managed certificate' })
-        @ApiResponse({ status: 200, description: 'Renewal triggered' })
-        async renew(
-          @CurrentTenant() tenantId: string,
-          @Param('id') id: string,
-        ): Promise < Certificate > {
-          return this.certificatesService.renew(tenantId, id);
-        }
+        @Get(':id/renewal-context')
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.SECURITY_LEAD)
+  @ApiOperation({ summary: 'Get pre-populated renewal context (tenant org data + connected cloud providers) for renewal modal' })
+  @ApiResponse({ status: 200, description: 'Renewal context retrieved successfully' })
+  async getRenewalContext(
+    @CurrentTenant() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.certificatesService.getRenewalContext(tenantId, id);
+  }
+
+  @Post(':id/generate-csr')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.SECURITY_LEAD)
+  @ApiOperation({ summary: 'Generate fresh PKCS#10 CSR and key pair with tenant metadata for CA submission' })
+  @ApiResponse({ status: 200, description: 'CSR generated successfully' })
+  async generateCsr(
+    @CurrentTenant() tenantId: string,
+    @Param('id') id: string,
+    @Body() body?: {
+      keyAlgorithm?: 'RSA_2048' | 'RSA_4096';
+      organization?: string;
+      department?: string;
+      country?: string;
+    },
+  ) {
+    return this.certificatesService.generateRenewalCsr(tenantId, id, body);
+  }
+
+  @Post(':id/renew')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER)
+  @ApiOperation({ summary: 'Trigger renewal workflow for a managed certificate with CA and DNS validation' })
+  @ApiResponse({ status: 200, description: 'Renewal triggered' })
+  async renew(
+    @CurrentTenant() tenantId: string,
+    @Param('id') id: string,
+    @Body() renewRequest?: any,
+  ): Promise<Certificate> {
+    return this.certificatesService.renew(tenantId, id, renewRequest);
+  }
 
         @Post(':id/reprobe')
         @HttpCode(HttpStatus.OK)

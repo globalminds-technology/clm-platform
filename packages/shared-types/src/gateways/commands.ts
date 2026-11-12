@@ -45,3 +45,24 @@ export interface DiscoveryScanResult {
   isSelfSigned: boolean;
 }
 
+export interface DeployCertPayload {
+  certificateId: string;
+  domain: string;
+  certificatePem: string;
+  privateKeyPem?: string;
+  caBundlePem?: string;
+  targetType: string;
+  targetConfig: {
+    certPath?: string;
+    keyPath?: string;
+    reloadCommand?: string;
+    awsRegion?: string;
+    acmCertificateArn?: string;
+    albListenerArn?: string;
+    k8sNamespace?: string;
+    k8sSecretName?: string;
+    [key: string]: any;
+  };
+}
+
+
