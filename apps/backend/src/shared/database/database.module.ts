@@ -19,15 +19,22 @@ export const DATABASE_POOL = 'DATABASE_POOL';
         const appUser = configService.get('POSTGRES_APP_USER') || configService.get('POSTGRES_USER', 'clm_app');
         const appPass = configService.get('POSTGRES_APP_PASSWORD') || configService.get('POSTGRES_PASSWORD', 'clm_app_secret');
 
+        const databaseUrl = configService.get<string>('DATABASE_URL');
         const primaryConn =
-          configService.get<string>('DATABASE_URL') ||
+          databaseUrl ||
           `postgresql://${appUser}:${appPass}@${host}:${port}/${database}`;
+
+        const useSsl =
+          !!databaseUrl &&
+          !databaseUrl.includes('127.0.0.1') &&
+          !databaseUrl.includes('localhost');
 
         const pool = new Pool({
           connectionString: primaryConn,
           max: 20,
           idleTimeoutMillis: 30000,
-          connectionTimeoutMillis: 3000,
+          connectionTimeoutMillis: 10000,
+          ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
         });
 
         pool.on('error', err => {
@@ -37,10 +44,18 @@ export const DATABASE_POOL = 'DATABASE_POOL';
         pool
           .connect()
           .then(client => {
-            logger.log(`Connected successfully to PostgreSQL database '${database}' with role '${appUser}'`);
+            logger.log(
+              databaseUrl
+                ? 'Connected successfully to managed PostgreSQL via DATABASE_URL'
+                : `Connected successfully to PostgreSQL database '${database}' with role '${appUser}'`,
+            );
             client.release();
           })
           .catch(async err => {
+            if (databaseUrl) {
+              logger.error(`Failed to connect to PostgreSQL via DATABASE_URL: ${err.message}`);
+              return;
+            }
             logger.warn(`Connection with '${appUser}' failed (${err.message}). Attempting automated self-healing fallback...`);
 
             try {
@@ -99,9 +114,12 @@ export class DatabaseModule implements OnModuleInit, OnApplicationShutdown {
   constructor(
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   async onModuleInit() {
+    if (this.configService.get<string>('DATABASE_URL')) {
+      return;
+    }
     await this.syncRlsPolicies();
   }
 
@@ -204,13 +222,13 @@ export class DatabaseModule implements OnModuleInit, OnApplicationShutdown {
       this.logger.debug?.(`RLS sync note: ${err.message}`);
     } finally {
       if (maintPool) {
-        await maintPool.end().catch(() => {});
+        await maintPool.end().catch(() => { });
       }
     }
   }
 
   async onApplicationShutdown() {
     this.logger.log('Draining PostgreSQL connection pool');
-    await this.pool.end().catch(() => {});
+    await this.pool.end().catch(() => { });
   }
 }
