@@ -32,13 +32,21 @@ export const DATABASE_POOL = 'DATABASE_POOL';
         const pool = new Pool({
           connectionString: primaryConn,
           max: 20,
-          idleTimeoutMillis: 30000,
+          idleTimeoutMillis: 10000,
           connectionTimeoutMillis: 10000,
+          keepAlive: true,
+          keepAliveInitialDelayMillis: 10000,
           ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
         });
 
         pool.on('error', err => {
-          logger.error('Unexpected idle PostgreSQL client error', err.stack);
+          logger.warn(`Idle PostgreSQL client error (handled): ${err.message}`);
+        });
+
+        pool.on('connect', client => {
+          client.on('error', err => {
+            logger.warn(`PostgreSQL client socket error (handled): ${err.message}`);
+          });
         });
 
         pool
