@@ -30,12 +30,26 @@ import { createApiClient } from '@clm/api-client';
 
 const api = createApiClient({
   baseUrl: (import.meta as any).env?.VITE_API_URL || 'http://localhost:4000/api/v1',
+  getAuthToken: () => localStorage.getItem('clm_admin_access_token'),
   defaultHeaders: {
     'x-user-role': 'SUPER_ADMIN',
   },
 });
 
 export function App() {
+  const [adminUser, setAdminUser] = useState<{ email: string; firstName?: string; lastName?: string; role?: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem('clm_admin_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [plans, setPlans] = useState<PlanDefinition[]>([]);
@@ -66,6 +80,7 @@ export function App() {
 
   // Fetch real data from PostgreSQL backend
   const fetchAdminData = useCallback(async () => {
+    if (!adminUser) return;
     setIsLoading(true);
     setDbError(null);
     try {
@@ -93,16 +108,66 @@ export function App() {
     } catch (err: any) {
       const msg = err?.message || 'Database connection error. Failed to load administrative records from PostgreSQL.';
       console.error('Error fetching admin data:', err);
+      if (msg.toLowerCase().includes('authentication') || err?.status === 401) {
+        localStorage.removeItem('clm_admin_access_token');
+        localStorage.removeItem('clm_admin_user');
+        setAdminUser(null);
+        setLoginError('Session expired. Please sign in again.');
+        return;
+      }
       setDbError(msg);
       toast.error('PostgreSQL Fetch Error', msg);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedTenantId]);
+  }, [adminUser, selectedTenantId]);
 
   useEffect(() => {
     fetchAdminData();
   }, [fetchAdminData]);
+  if (adminUser) {
+    fetchAdminData();
+  }
+  useEffect(() => {
+    if (adminUser) {
+      fetchAdminData();
+    }
+  }, [adminUser, fetchAdminData]);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setIsLoggingIn(true);
+    try {
+      const res: any = await api.auth.login({
+        email: loginEmail.trim(),
+        password: loginPassword,
+      });
+      if (res?.user?.role !== 'SUPER_ADMIN') {
+        setLoginError('Access denied. This portal requires a SUPER_ADMIN account.');
+        return;
+      }
+      if (res?.tokens?.accessToken) {
+        localStorage.setItem('clm_admin_access_token', res.tokens.accessToken);
+      }
+      localStorage.setItem('clm_admin_user', JSON.stringify(res.user));
+      setAdminUser(res.user);
+      setLoginPassword('');
+      toast.success('Signed in', `Welcome back, ${res.user.firstName || res.user.email}`);
+    } catch (err: any) {
+      setLoginError(err?.message || 'Invalid email or password');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleAdminLogout = () => {
+    localStorage.removeItem('clm_admin_access_token');
+    localStorage.removeItem('clm_admin_user');
+    setAdminUser(null);
+    setTenants([]);
+    setAuditLogs([]);
+  };
 
   // Add Organization Modal
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -227,7 +292,7 @@ export function App() {
       const updated = await api.tenants.updateStatus(tenantId, TenantStatus.ACTIVE);
       setTenants(prev => prev.map(t => (t.id === tenantId ? updated : t)));
       toast.success('Organization Approved', `Tenant is now active with full ACME & gateway privileges.`);
-      api.audit.listGlobal().then(setAuditLogs).catch(() => {});
+      api.audit.listGlobal().then(setAuditLogs).catch(() => { });
     } catch (err: any) {
       toast.error('Approval Failed', err.message || 'Could not approve tenant');
     }
@@ -238,7 +303,7 @@ export function App() {
       const updated = await api.tenants.updateStatus(tenantId, TenantStatus.REJECTED);
       setTenants(prev => prev.map(t => (t.id === tenantId ? updated : t)));
       toast.warning('Organization Declined', `Tenant application has been rejected.`);
-      api.audit.listGlobal().then(setAuditLogs).catch(() => {});
+      api.audit.listGlobal().then(setAuditLogs).catch(() => { });
     } catch (err: any) {
       toast.error('Rejection Failed', err.message || 'Could not reject tenant');
     }
@@ -259,7 +324,7 @@ export function App() {
         'Plan & Quotas Configured',
         `${selectedTenant.name} updated to ${selectedPlanTier} (Effective: ${effectiveDate})`,
       );
-      api.audit.listGlobal().then(setAuditLogs).catch(() => {});
+      api.audit.listGlobal().then(setAuditLogs).catch(() => { });
     } catch (err: any) {
       toast.error('Update Failed', err.message || 'Failed to update subscription tier');
     }
@@ -404,6 +469,66 @@ export function App() {
     },
   ];
 
+  if (!adminUser) {
+    return (
+      <div className="min-h-screen bg-[#F4F6FB] text-[#0F172A] flex items-center justify-center p-4 font-sans">
+        <Toaster position="top-right" />
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200/80 p-8">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="h-11 w-11 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm">
+              <ShieldAlert className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900">CLM SaaS</h1>
+              <p className="text-xs font-medium text-slate-500">Super Admin Control Plane</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleAdminLogin} className="space-y-4">
+            {loginError && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-medium">
+                {loginError}
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Super Admin Email
+              </label>
+              <input
+                type="email"
+                required
+                value={loginEmail}
+                onChange={e => setLoginEmail(e.target.value)}
+                placeholder="superadmin@globalmindstech.com"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Password
+              </label>
+              <input
+                type="password"
+                required
+                value={loginPassword}
+                onChange={e => setLoginPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold text-sm transition-colors cursor-pointer"
+            >
+              {isLoggingIn ? 'Signing in...' : 'Sign In to Super Admin'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F4F6FB] text-[#0F172A] flex p-3 font-sans selection:bg-blue-500/20 selection:text-blue-600">
       <Toaster position="top-right" />
@@ -472,6 +597,13 @@ export function App() {
                 <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${isLoading ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">Sync DB</span>
               </button>
+              <button
+                onClick={handleAdminLogout}
+                title="Sign out of Super Admin"
+                className="px-3 py-2 rounded-full text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors shadow-sm"
+              >
+                Sign Out
+              </button>
               {activeTab === 'plans' ? (
                 <button
                   onClick={() => setIsAddPlanModalOpen(true)}
@@ -531,11 +663,10 @@ export function App() {
                 </button>
                 <button
                   onClick={() => setStatusFilter('PENDING_APPROVAL')}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                    statusFilter === 'PENDING_APPROVAL'
-                      ? 'bg-amber-600 text-white shadow-sm shadow-amber-500/30'
-                      : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
-                  }`}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${statusFilter === 'PENDING_APPROVAL'
+                    ? 'bg-amber-600 text-white shadow-sm shadow-amber-500/30'
+                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
+                    }`}
                 >
                   <span>Pending</span>
                   <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-amber-800 font-extrabold">
@@ -586,8 +717,8 @@ export function App() {
                         key={tenant.id}
                         onClick={() => setSelectedTenantId(tenant.id)}
                         className={`flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all duration-150 ${isSelected
-                            ? 'bg-blue-50/70 border border-blue-200/80 shadow-sm'
-                            : 'hover:bg-slate-50 border border-transparent'
+                          ? 'bg-blue-50/70 border border-blue-200/80 shadow-sm'
+                          : 'hover:bg-slate-50 border border-transparent'
                           }`}
                       >
                         <div className="min-w-0">
@@ -974,13 +1105,12 @@ export function App() {
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
                               {t.tier}
                             </span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              t.status === 'ACTIVE'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : t.status === 'PENDING_APPROVAL'
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-rose-100 text-rose-700'
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${t.status === 'ACTIVE'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : t.status === 'PENDING_APPROVAL'
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-rose-100 text-rose-700'
+                              }`}>
                               {t.status}
                             </span>
                           </div>
@@ -997,9 +1127,8 @@ export function App() {
 
                         <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full transition-all ${
-                              percent > 85 ? 'bg-rose-500' : percent > 60 ? 'bg-amber-500' : 'bg-gradient-to-r from-blue-600 to-indigo-600'
-                            }`}
+                            className={`h-full rounded-full transition-all ${percent > 85 ? 'bg-rose-500' : percent > 60 ? 'bg-amber-500' : 'bg-gradient-to-r from-blue-600 to-indigo-600'
+                              }`}
                             style={{ width: `${Math.max(percent, currentCerts > 0 ? 4 : 0)}%` }}
                           />
                         </div>
@@ -1239,11 +1368,10 @@ export function App() {
                 <div
                   key={plan.tier}
                   onClick={() => setSelectedPlanTier(plan.tier)}
-                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                    selectedPlanTier === plan.tier
-                      ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500/30'
-                      : 'border-slate-200 bg-white hover:bg-slate-50'
-                  }`}
+                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${selectedPlanTier === plan.tier
+                    ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500/30'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs text-slate-800">{plan.label}</span>
