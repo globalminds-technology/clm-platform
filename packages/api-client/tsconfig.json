@@ -7,11 +7,6 @@
       "ES2022",
       "DOM"
     ],
-    "composite": false,
-    "lib": [
-      "ES2022",
-      "DOM"
-    ],
     "outDir": "./dist",
     "rootDir": "./src"
   },

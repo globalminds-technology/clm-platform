@@ -70,14 +70,17 @@ export class TenantsController {
         return this.tenantsService.findById(id);
       }
 
-      @Patch(':id')
-      @Roles(Role.SUPER_ADMIN)
-      @ApiOperation({ summary: 'Update tenant quotas, subscription tier, or status' })
-      @ApiResponse({ status: 200, description: 'Tenant updated successfully' })
-      @ApiResponse({ status: 404, description: 'Tenant not found' })
-      async update(@Param('id') id: string, @Body() updateTenantDto: UpdateTenantDto): Promise < Tenant > {
-        return this.tenantsService.update(id, updateTenantDto);
-      }
+  @Patch(':id')
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN)
+  @ApiOperation({ summary: 'Update tenant quotas, subscription tier, status, or organization settings' })
+  @ApiResponse({ status: 200, description: 'Tenant updated successfully' })
+  @ApiResponse({ status: 404, description: 'Tenant not found' })
+  async update(
+    @Param('id') id: string,
+    @Body() updateTenantDto: UpdateTenantDto,
+  ): Promise<Tenant> {
+    return this.tenantsService.update(id, updateTenantDto);
+  }
 
       @Delete(':id')
       @HttpCode(HttpStatus.NO_CONTENT)

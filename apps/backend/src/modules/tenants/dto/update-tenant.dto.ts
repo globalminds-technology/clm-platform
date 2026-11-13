@@ -29,5 +29,9 @@ export class UpdateTenantDto implements UpdateTenantRequest {
   @Min(1)
   @IsOptional()
   maxGateways?: number;
+
+  @ApiPropertyOptional({ description: 'Tenant settings and org metadata' })
+  @IsOptional()
+  settings?: any;
 }
 

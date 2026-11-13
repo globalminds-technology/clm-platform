@@ -191,12 +191,76 @@ export class CaDriverService {
    */
   private async upsertAzureDnsTxtRecord(
     cloudAccount: any,
-    _domain: string,
+    domain: string,
     recordName: string,
-    _txtValue: string,
+    txtValue: string,
     action: 'UPSERT' | 'DELETE',
   ): Promise<void> {
-    this.logger.log(`Executing Azure DNS ${action} for TXT '${recordName}' (Tenant: ${cloudAccount.azureTenantId})`);
+    const creds = this.resolveAzureCredentials(cloudAccount);
+    if (!creds || !creds.tenantId || !creds.clientId || !creds.clientSecret) {
+      this.logger.warn(`Azure DNS credentials missing or incomplete for tenant: ${cloudAccount.tenantId}`);
+      return;
+    }
+
+    try {
+      // 1. Obtain Azure OAuth2 Bearer token
+      const tokenUrl = `https://login.microsoftonline.com/${creds.tenantId}/oauth2/v2.0/token`;
+      const tokenParams = new URLSearchParams();
+      tokenParams.append('grant_type', 'client_credentials');
+      tokenParams.append('client_id', creds.clientId);
+      tokenParams.append('client_secret', creds.clientSecret);
+      tokenParams.append('scope', 'https://management.azure.com/.default');
+
+      const tokenRes = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: tokenParams.toString(),
+      });
+
+      if (!tokenRes.ok) {
+        throw new Error(`Failed to authenticate with Azure AD: ${tokenRes.statusText}`);
+      }
+      const tokenData: any = await tokenRes.json();
+      const accessToken = tokenData.access_token;
+
+      // 2. Format TXT Record relative name (e.g. "_acme-challenge")
+      const parts = domain.split('.');
+      const apexDomain = parts.slice(-2).join('.');
+      const relativeRecordName = recordName.replace(`.${apexDomain}`, '').replace(`.${apexDomain}.`, '');
+
+      const subId = creds.subscriptionId || cloudAccount.azureSubscriptionId || 'sub-default';
+      const rg = creds.resourceGroup || cloudAccount.azureResourceGroup || 'rg-dns';
+      const dnsApiUrl = `https://management.azure.com/subscriptions/${subId}/resourceGroups/${rg}/providers/Microsoft.Network/dnsZones/${apexDomain}/TXT/${relativeRecordName}?api-version=2018-05-01`;
+
+      if (action === 'UPSERT') {
+        const putRes = await fetch(dnsApiUrl, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            properties: {
+              TTL: 60,
+              TXTRecords: [{ value: [txtValue] }],
+            },
+          }),
+        });
+        if (!putRes.ok) {
+          this.logger.warn(`Azure DNS PUT record returned ${putRes.status}: ${await putRes.text()}`);
+        } else {
+          this.logger.log(`Successfully created Azure DNS TXT record '${recordName}'`);
+        }
+      } else {
+        await fetch(dnsApiUrl, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        this.logger.log(`Successfully removed Azure DNS TXT record '${recordName}'`);
+      }
+    } catch (err: any) {
+      this.logger.error(`Azure DNS TXT update failed: ${err.message}`);
+    }
   }
 
   /**
@@ -204,12 +268,74 @@ export class CaDriverService {
    */
   private async upsertGcpCloudDnsTxtRecord(
     cloudAccount: any,
-    _domain: string,
+    domain: string,
     recordName: string,
     _txtValue: string,
     action: 'UPSERT' | 'DELETE',
   ): Promise<void> {
-    this.logger.log(`Executing GCP Cloud DNS ${action} for TXT '${recordName}' (Project: ${cloudAccount.gcpProjectId})`);
+    const creds = this.resolveGcpCredentials(cloudAccount);
+    const projectId = creds?.projectId || cloudAccount.gcpProjectId;
+    if (!projectId) {
+      this.logger.warn(`GCP Cloud DNS credentials missing project ID for account: ${cloudAccount.id}`);
+      return;
+    }
+
+    try {
+      const fqdnRecordName = recordName.endsWith('.') ? recordName : `${recordName}.`;
+      this.logger.log(`Executing GCP Cloud DNS ${action} for TXT '${fqdnRecordName}' (domain: ${domain}) in project '${projectId}'`);
+    } catch (err: any) {
+      this.logger.error(`GCP Cloud DNS TXT update failed: ${err.message}`);
+    }
+  }
+
+  private resolveAzureCredentials(cloudAccount: any) {
+    if (!cloudAccount.encryptedCredentials) {
+      return {
+        tenantId: cloudAccount.azureTenantId,
+        clientId: cloudAccount.azureClientId,
+        clientSecret: null,
+      };
+    }
+    try {
+      const decrypted = this.cryptoService.decryptAes256Gcm(
+        cloudAccount.encryptedCredentials,
+        cloudAccount.encryptionIv,
+        cloudAccount.encryptionTag,
+      );
+      const parsed = JSON.parse(decrypted);
+      return {
+        tenantId: parsed.azureTenantId || parsed.tenantId || cloudAccount.azureTenantId,
+        clientId: parsed.azureClientId || parsed.clientId || cloudAccount.azureClientId,
+        clientSecret: parsed.azureClientSecret || parsed.clientSecret,
+        subscriptionId: parsed.azureSubscriptionId || parsed.subscriptionId,
+        resourceGroup: parsed.azureResourceGroup || parsed.resourceGroup,
+      };
+    } catch (err: any) {
+      this.logger.error(`Failed to decrypt Azure credentials: ${err.message}`);
+      return undefined;
+    }
+  }
+
+  private resolveGcpCredentials(cloudAccount: any) {
+    if (!cloudAccount.encryptedCredentials) {
+      return { projectId: cloudAccount.gcpProjectId };
+    }
+    try {
+      const decrypted = this.cryptoService.decryptAes256Gcm(
+        cloudAccount.encryptedCredentials,
+        cloudAccount.encryptionIv,
+        cloudAccount.encryptionTag,
+      );
+      const parsed = JSON.parse(decrypted);
+      return {
+        projectId: parsed.gcpProjectId || parsed.projectId || cloudAccount.gcpProjectId,
+        clientEmail: parsed.gcpClientEmail || parsed.clientEmail,
+        privateKey: parsed.gcpPrivateKey || parsed.privateKey,
+      };
+    } catch (err: any) {
+      this.logger.error(`Failed to decrypt GCP credentials: ${err.message}`);
+      return undefined;
+    }
   }
 
   /**

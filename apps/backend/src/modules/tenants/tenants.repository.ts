@@ -64,15 +64,34 @@ export class TenantsRepository {
       adminFirstName: string;
       adminLastName?: string;
       marketplaceProvider?: string;
+      country?: string;
+      state?: string;
+      locality?: string;
+      department?: string;
     },
     passwordHash: string,
   ): Promise<{ tenant: Tenant; adminUser: any }> {
     return this.tenantContextService.withSystemContext(async client => {
-      // 1. Insert Tenant with PENDING_APPROVAL status
+      const orgMetadata = {
+        organizationName: dto.organizationName,
+        department: dto.department || '',
+        country: (dto.country || '').substring(0, 2).toUpperCase(),
+        state: dto.state || '',
+        locality: dto.locality || '',
+        contactEmail: dto.adminEmail.toLowerCase().trim(),
+      };
+
+      const settings = {
+        defaultRenewalWindowDays: 30,
+        emailAlerts: true,
+        orgMetadata,
+      };
+
+      // 1. Insert Tenant with PENDING_APPROVAL status and user-submitted orgMetadata in settings
       const tenantRes = await client.query(
         `INSERT INTO tenants (
-          name, slug, status, tier, max_certificates, max_gateways
-        ) VALUES ($1, $2, $3, $4, $5, $6)
+          name, slug, status, tier, max_certificates, max_gateways, settings
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *;`,
         [
           dto.organizationName,
@@ -81,6 +100,7 @@ export class TenantsRepository {
           SubscriptionTier.COMMUNITY,
           50,
           2,
+          JSON.stringify(settings),
         ],
       );
 
@@ -246,6 +266,26 @@ export class TenantsRepository {
       const current = await this.findById(id);
       if (!current) return null;
 
+      // Merge existing settings with newly provided settings
+      let newSettings = typeof current.settings === 'string' 
+        ? JSON.parse(current.settings) 
+        : (current.settings || {});
+
+      if (dto.settings) {
+        const incomingSettings = typeof dto.settings === 'string'
+          ? JSON.parse(dto.settings)
+          : dto.settings;
+
+        newSettings = {
+          ...newSettings,
+          ...incomingSettings,
+          orgMetadata: {
+            ...(newSettings.orgMetadata || {}),
+            ...(incomingSettings.orgMetadata || {}),
+          },
+        };
+      }
+
       const res = await client.query(
         `UPDATE tenants
          SET name = COALESCE($1, name),
@@ -253,10 +293,19 @@ export class TenantsRepository {
              tier = COALESCE($3, tier),
              max_certificates = COALESCE($4, max_certificates),
              max_gateways = COALESCE($5, max_gateways),
+             settings = $6,
              updated_at = NOW()
-         WHERE id = $6
+         WHERE id = $7
          RETURNING *;`,
-        [dto.name, dto.status, dto.tier, dto.maxCertificates, dto.maxGateways, id],
+        [
+          dto.name,
+          dto.status,
+          dto.tier,
+          dto.maxCertificates,
+          dto.maxGateways,
+          JSON.stringify(newSettings),
+          id,
+        ],
       );
 
       if (res.rows.length === 0) return null;
@@ -272,6 +321,11 @@ export class TenantsRepository {
   }
 
   private mapRowToTenant(row: any): Tenant {
+    let parsedSettings = {};
+    if (row.settings) {
+      parsedSettings = typeof row.settings === 'string' ? JSON.parse(row.settings) : row.settings;
+    }
+
     return {
       id: row.id,
       name: row.name,
@@ -283,7 +337,7 @@ export class TenantsRepository {
       awsAccountId: row.aws_account_id,
       awsCustomerIdentifier: row.aws_customer_identifier,
       awsProductCode: row.aws_product_code,
-      settings: row.settings || {},
+      settings: parsedSettings,
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
     };
