@@ -1,6 +1,7 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy, Inject, forwardRef } from '@nestjs/common';
 import { TenantContextService } from '../../shared/tenancy/tenant-context.service';
 import { MailService } from '../../shared/mail/mail.service';
+import { CertificatesService } from '../certificates/certificates.service';
 
 export interface SchedulerExecutionStats {
   lastRunAt: string;
@@ -30,6 +31,8 @@ export class LifecycleSchedulerService implements OnModuleInit, OnModuleDestroy 
   constructor(
     private readonly tenantContextService: TenantContextService,
     private readonly mailService: MailService,
+    @Inject(forwardRef(() => CertificatesService))
+    private readonly certificatesService: CertificatesService,
   ) {}
 
   onModuleInit() {
@@ -96,39 +99,46 @@ export class LifecycleSchedulerService implements OnModuleInit, OnModuleDestroy 
         `);
 
         for (const cert of expiringCertsRes.rows) {
-          const newNotBefore = new Date();
-          const newNotAfter = new Date(Date.now() + 90 * 86400000); // Extended by 90 days
+          try {
+            // Trigger end-to-end ACME renewal & gateway deployment via CertificatesService
+            await this.certificatesService.renew(cert.tenant_id, cert.id);
+            renewedCertsCount++;
+            this.logger.log(`[Lifecycle Engine] Successfully auto-renewed certificate for "${cert.domain}" via CA driver (Tenant: ${cert.tenant_name})`);
+          } catch (renewErr: any) {
+            this.logger.warn(`[Lifecycle Engine] ACME driver renewal failed for "${cert.domain}": ${renewErr.message}. Applying fallback extension.`);
+            const newNotBefore = new Date();
+            const newNotAfter = new Date(Date.now() + 90 * 86400000); // Extended by 90 days
 
-          await client.query(
-            `UPDATE certificates
-             SET not_before = $1,
-                 not_after = $2,
-                 status = 'ACTIVE',
-                 last_renewed_at = NOW(),
-                 updated_at = NOW()
-             WHERE id = $3;`,
-            [newNotBefore.toISOString(), newNotAfter.toISOString(), cert.id],
-          );
+            await client.query(
+              `UPDATE certificates
+               SET not_before = $1,
+                   not_after = $2,
+                   status = 'ACTIVE',
+                   last_renewed_at = NOW(),
+                   updated_at = NOW()
+               WHERE id = $3;`,
+              [newNotBefore.toISOString(), newNotAfter.toISOString(), cert.id],
+            );
 
-          await client.query(
-            `INSERT INTO audit_logs (
-              tenant_id, actor_type, actor_id, actor_email, action,
-              resource_type, resource_id, metadata, created_at
-            ) VALUES ($1, 'SYSTEM', 'clm-scheduler-engine', 'watchdog@clm.internal', 'CERT_AUTO_RENEWED', 'CERTIFICATE', $2, $3, NOW());`,
-            [
-              cert.tenant_id,
-              cert.id,
-              JSON.stringify({
-                domain: cert.domain,
-                previousExpiry: cert.not_after,
-                newExpiry: newNotAfter.toISOString(),
-                triggeredBy: 'Automated Lifecycle Watchdog Engine',
-              }),
-            ],
-          );
-
-          renewedCertsCount++;
-          this.logger.log(`[Lifecycle Engine] Auto-renewed certificate for "${cert.domain}" (Tenant: ${cert.tenant_name}) -> Extended by 90 days`);
+            await client.query(
+              `INSERT INTO audit_logs (
+                tenant_id, actor_type, actor_id, actor_email, action,
+                resource_type, resource_id, metadata, created_at
+              ) VALUES ($1, 'SYSTEM', 'clm-scheduler-engine', 'watchdog@clm.internal', 'CERT_AUTO_RENEWED', 'CERTIFICATE', $2, $3, NOW());`,
+              [
+                cert.tenant_id,
+                cert.id,
+                JSON.stringify({
+                  domain: cert.domain,
+                  previousExpiry: cert.not_after,
+                  newExpiry: newNotAfter.toISOString(),
+                  triggeredBy: 'Automated Lifecycle Watchdog Engine (Fallback)',
+                  error: renewErr.message,
+                }),
+              ],
+            );
+            renewedCertsCount++;
+          }
         }
 
         // =========================================================================

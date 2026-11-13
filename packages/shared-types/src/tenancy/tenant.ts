@@ -91,6 +91,17 @@ export interface RegisterTenantRequest {
   adminFirstName: string;
   adminLastName?: string;
   marketplaceProvider?: CloudMarketplace;
+  country?: string;
+  state?: string;
+  locality?: string;
+  department?: string;
+}
+
+export interface UpdateTenantSettingsRequest {
+  defaultRenewalWindowDays?: number;
+  emailAlerts?: boolean;
+  slackWebhookUrl?: string | null;
+  orgMetadata?: TenantOrganizationMetadata;
 }
 
 export interface UpdateTenantRequest {
@@ -101,4 +112,5 @@ export interface UpdateTenantRequest {
   effectivePlanDate?: string;
   maxCertificates?: number;
   maxGateways?: number;
+  settings?: UpdateTenantSettingsRequest;
 }

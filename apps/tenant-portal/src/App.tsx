@@ -93,10 +93,7 @@ export function App() {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [currentTenant, setCurrentTenant] = useState<Tenant | null>(() => {
-    const saved = localStorage.getItem('clm_tenant_org');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [currentTenant, setCurrentTenant] = useState<Tenant | null>(null);
 
   // Public View Navigation: 'home' for product details, 'auth' for registration/sign-in
   const [publicView, setPublicView] = useState<'home' | 'auth'>('home');
@@ -109,9 +106,23 @@ export function App() {
   const [authOrgName, setAuthOrgName] = useState('');
   const [authFirstName, setAuthFirstName] = useState('');
   const [authLastName, setAuthLastName] = useState('');
+  const [authCountry, setAuthCountry] = useState('US');
+  const [authState, setAuthState] = useState('');
+  const [authLocality, setAuthLocality] = useState('');
+  const [authDepartment, setAuthDepartment] = useState('SecOps');
+  const [signupStep, setSignupStep] = useState<1 | 2>(1);
   const [authMarketplace] = useState<CloudMarketplace>(CloudMarketplace.DIRECT);
   const [authTier, setAuthTier] = useState<SubscriptionTier>(SubscriptionTier.PROFESSIONAL);
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+
+  // Edit Organization Profile State
+  const [showEditOrgModal, setShowEditOrgModal] = useState(false);
+  const [editOrgName, setEditOrgName] = useState('');
+  const [editCountry, setEditCountry] = useState('');
+  const [editDepartment, setEditDepartment] = useState('');
+  const [editState, setEditState] = useState('');
+  const [editLocality, setEditLocality] = useState('');
+  const [isSavingOrgSettings, setIsSavingOrgSettings] = useState(false);
 
   // Password Reset Specific State
   const [resetToken, setResetToken] = useState('');
@@ -210,14 +221,10 @@ export function App() {
     if (manual) setIsCheckingStatus(true);
     try {
       const res = await api.tenants.getMyStatus();
-      if (res && res.status) {
-        if (currentTenant && currentTenant.status !== (res.status as TenantStatus)) {
-          const updated = { ...currentTenant, status: res.status as TenantStatus };
-          setCurrentTenant(updated);
-          localStorage.setItem('clm_tenant_org', JSON.stringify(updated));
-          if (res.status === TenantStatus.ACTIVE) {
-            toast.success('Account Approved!', 'Your organization has been verified and active access unlocked.');
-          }
+      if (res && res.tenant) {
+        setCurrentTenant(res.tenant);
+        if (res.status === TenantStatus.ACTIVE && currentTenant?.status !== TenantStatus.ACTIVE) {
+          toast.success('Account Approved!', 'Your organization has been verified and active access unlocked.');
         }
       }
     } catch {
@@ -225,7 +232,7 @@ export function App() {
     } finally {
       if (manual) setIsCheckingStatus(false);
     }
-  }, [currentTenant]);
+  }, [currentTenant?.status]);
 
   useEffect(() => {
     if (currentTenant?.status === TenantStatus.PENDING_APPROVAL) {
@@ -283,6 +290,10 @@ export function App() {
           adminFirstName: authFirstName || 'Admin',
           adminLastName: authLastName || '',
           marketplaceProvider: authMarketplace,
+          country: authCountry.trim().toUpperCase(),
+          state: authState.trim(),
+          locality: authLocality.trim(),
+          department: authDepartment.trim(),
         });
 
         setCurrentTenant(res.tenant);
@@ -502,27 +513,21 @@ export function App() {
 
   // Fetch live tenant data from PostgreSQL backend
   const fetchTenantData = useCallback(async () => {
-    if (!currentUser || !currentTenant) {
+    if (!currentUser) {
       setIsLoading(false);
       return;
     }
     setIsLoading(true);
     setDbError(null);
     try {
-      // Re-synchronize tenant status so Super Admin approvals update the UI immediately
+      // Always fetch fresh tenant profile & settings from PostgreSQL database (Zero Local Cache)
       try {
         const statusRes = await api.tenants.getMyStatus();
         if (statusRes?.tenant) {
-          if (statusRes.tenant.status !== currentTenant.status) {
-            setCurrentTenant(statusRes.tenant);
-            localStorage.setItem('clm_tenant_org', JSON.stringify(statusRes.tenant));
-            if (statusRes.tenant.status === TenantStatus.ACTIVE) {
-              toast.success('Account Approved!', 'Your organization has been verified and active access unlocked.');
-            }
-          }
+          setCurrentTenant(statusRes.tenant);
         }
       } catch (err) {
-        console.warn('Could not sync status:', err);
+        console.warn('Could not sync status from DB:', err);
       }
 
       const [certList, gwList, auditList, userList, cloudList] = await Promise.all([
@@ -1273,124 +1278,240 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
 
               {authMode === 'signup' && (
                 <form onSubmit={handleAuthSubmit} className="space-y-6">
-                  <div>
-                    <h3 className="text-xl font-black text-slate-900">Self-Service Organization Onboarding</h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Provision your isolated tenant workspace with PostgreSQL Row-Level Security and multi-gateway access.
-                    </p>
+                  {/* Stepper Header */}
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900">
+                        {signupStep === 1 ? '1. Account & Company Profile' : '2. Legal Location & CSR Defaults'}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {signupStep === 1
+                          ? 'Set up your administrator credentials and company identity.'
+                          : 'Official location details for X.509 Certificate Signing Requests (CSR).'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
+                        signupStep === 1 ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {signupStep === 1 ? '1' : <Check className="h-3.5 w-3.5" />}
+                      </div>
+                      <div className="w-6 h-0.5 bg-slate-200" />
+                      <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
+                        signupStep === 2 ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' : 'bg-slate-100 text-slate-400'
+                      }`}>
+                        2
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5 sm:col-span-2">
-                      <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <Building className="h-3.5 w-3.5 text-blue-600" />
-                        <span>Company Name *</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Acme Corporation"
-                        value={authOrgName}
-                        onChange={e => setAuthOrgName(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-                      />
-                    </div>
+                  {signupStep === 1 ? (
+                    /* Step 1: Account & Company Profile */
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                          <Building className="h-3.5 w-3.5 text-blue-600" />
+                          <span>Company Name *</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Acme Corporation"
+                          value={authOrgName}
+                          onChange={e => setAuthOrgName(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                        />
+                      </div>
 
-                    <div className="space-y-1.5 sm:col-span-2">
-                      <label className="text-xs font-bold text-slate-700">Work Email *</label>
-                      <input
-                        type="email"
-                        required
-                        placeholder="alex@acme.com"
-                        value={authEmail}
-                        onChange={e => setAuthEmail(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-                      />
-                    </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-700">Work Email *</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="alex@acme.com"
+                          value={authEmail}
+                          onChange={e => setAuthEmail(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                        />
+                      </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-700">First Name *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Alex"
-                        value={authFirstName}
-                        onChange={e => setAuthFirstName(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-                      />
-                    </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-700">First Name *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Alex"
+                            value={authFirstName}
+                            onChange={e => setAuthFirstName(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                          />
+                        </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-700">Last Name (Optional)</label>
-                      <input
-                        type="text"
-                        placeholder="Vance"
-                        value={authLastName}
-                        onChange={e => setAuthLastName(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-                      />
-                    </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-700">Last Name (Optional)</label>
+                          <input
+                            type="text"
+                            placeholder="Vance"
+                            value={authLastName}
+                            onChange={e => setAuthLastName(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                          />
+                        </div>
+                      </div>
 
-                    <div className="space-y-1.5 sm:col-span-2">
-                      <PasswordInput
-                        label="Password *"
-                        required
-                        placeholder="••••••••••••"
-                        value={authPassword}
-                        onChange={e => setAuthPassword(e.target.value)}
-                        helperText="Minimum 8 characters (Argon2id password hashing protected)"
-                      />
-                    </div>
+                      <div className="space-y-1.5">
+                        <PasswordInput
+                          label="Password *"
+                          required
+                          placeholder="••••••••••••"
+                          value={authPassword}
+                          onChange={e => setAuthPassword(e.target.value)}
+                          helperText="Minimum 8 characters (Argon2id password hashing protected)"
+                        />
+                      </div>
 
-                    {/* Selected Plan Display */}
-                    <div className="space-y-1.5 sm:col-span-2">
-                      <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                        <span className="flex items-center gap-1.5">
-                          <Layers className="h-3.5 w-3.5 text-blue-600" />
-                          <span>Plan Tier</span>
-                        </span>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <Layers className="h-3.5 w-3.5 text-blue-600" />
+                            <span>Plan Tier</span>
+                          </span>
+                        </label>
+                        <select
+                          value={authTier}
+                          onChange={e => setAuthTier(e.target.value as SubscriptionTier)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                        >
+                          <option value={SubscriptionTier.COMMUNITY}>Community Free (50 Certs, 2 Gateways)</option>
+                          <option value={SubscriptionTier.AWS_MARKETPLACE_PAYGO}>Pay-as-you-GO (250 Certs, 10 Gateways)</option>
+                          <option value={SubscriptionTier.PROFESSIONAL}>Professional (500 Certs, 15 Gateways)</option>
+                          <option value={SubscriptionTier.ENTERPRISE}>Enterprise Dedicated (1,000+ Certs, 25 Gateways)</option>
+                        </select>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!authOrgName.trim() || !authEmail.trim() || !authFirstName.trim() || !authPassword.trim()) {
+                            toast.error('Missing Required Fields', 'Please complete company name, email, name, and password.');
+                            return;
+                          }
+                          setSignupStep(2);
+                        }}
+                        className="w-full py-3.5 rounded-2xl text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] cursor-pointer"
+                      >
+                        <span>Continue to Step 2: Location &amp; CSR Details</span>
+                        <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    /* Step 2: Location & CSR Details (Zero Hardcoded) */
+                    <div className="space-y-4">
+                      <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200/80 text-xs text-blue-800 space-y-1">
+                        <div className="font-bold flex items-center gap-1.5">
+                          <ShieldCheck className="h-4 w-4 text-blue-600" />
+                          <span>Zero-Hardcode Guarantee</span>
+                        </div>
+                        <p className="text-[11px] text-blue-700 leading-relaxed">
+                          These fields are stored directly in your PostgreSQL database record and used as Distinguished Name (DN) attributes for all certificate issuance and automated renewals.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-700">
+                            Country Code (C) *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            maxLength={2}
+                            placeholder="e.g. US, IN, GB"
+                            value={authCountry}
+                            onChange={e => setAuthCountry(e.target.value.toUpperCase())}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 font-mono focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                          />
+                          <span className="text-[10px] text-slate-400">2-letter ISO country code</span>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-700">
+                            Department / Unit (OU) *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. SecOps, DevOps, IT"
+                            value={authDepartment}
+                            onChange={e => setAuthDepartment(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                          />
+                          <span className="text-[10px] text-slate-400">Organizational Unit</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-700">
+                            State / Province (ST) *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. California, Karnataka"
+                            value={authState}
+                            onChange={e => setAuthState(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-700">
+                            City / Locality (L) *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. San Francisco, Bengaluru"
+                            value={authLocality}
+                            onChange={e => setAuthLocality(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 pt-2">
                         <button
                           type="button"
-                          onClick={() => setPublicView('home')}
-                          className="text-[11px] text-blue-600 hover:underline font-normal"
+                          onClick={() => setSignupStep(1)}
+                          className="px-4 py-3 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center gap-1 cursor-pointer"
                         >
-                          View Plan Details &rarr;
+                          <ArrowLeft className="h-4 w-4" />
+                          <span>Back</span>
                         </button>
-                      </label>
-                      <select
-                        value={authTier}
-                        onChange={e => setAuthTier(e.target.value as SubscriptionTier)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-                      >
-                        <option value={SubscriptionTier.COMMUNITY}>Community Free (25 Certs, 1 Gateway)</option>
-                        <option value={SubscriptionTier.AWS_MARKETPLACE_PAYGO}>Pay-as-you-GO ($49/mo - 250 Certs, 5 Gateways)</option>
-                        <option value={SubscriptionTier.PROFESSIONAL}>Professional ($199/mo - 1,000 Certs, 25 Gateways)</option>
-                        <option value={SubscriptionTier.ENTERPRISE}>Enterprise Dedicated (Unlimited Certs, Fleet Gateways)</option>
-                      </select>
+
+                        <button
+                          type="submit"
+                          disabled={isSubmittingAuth}
+                          className="flex-1 py-3.5 rounded-2xl text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] cursor-pointer"
+                        >
+                          {isSubmittingAuth ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                              <span>Provisioning Tenant Workspace in PostgreSQL...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Complete Registration &amp; Submit for Verification</span>
+                              <Check className="h-4 w-4" />
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-[11px] text-blue-800 leading-relaxed">
-                    <strong>Verification Guarantee:</strong> Your organization is provisioned with <code>PENDING_APPROVAL</code> status. Security engineers verify domain authority before unlocking live ACME issuance and gateway tunnels. You will be able to log in and monitor status immediately!
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmittingAuth}
-                    className="w-full py-3.5 rounded-2xl text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.01]"
-                  >
-                    {isSubmittingAuth ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        <span>Creating Tenant Workspace...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Create Workspace &amp; Submit for Security Verification</span>
-                        <ArrowRight className="h-4 w-4" />
-                      </>
-                    )}
-                  </button>
+                  )}
                 </form>
               )}
 
@@ -3154,41 +3275,91 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
               </div>
 
               {settingsSubTab === 'general' && (
-                <div className="grid grid-cols-2 gap-4 text-xs">
-                  <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-slate-100 space-y-2">
-                    <div className="font-bold text-slate-800 flex items-center gap-2">
-                      <Building className="h-4 w-4 text-blue-600" />
-                      <span>Workspace Organization</span>
-                    </div>
-                    <div className="space-y-1.5 text-slate-600 pt-1">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Company Name</span>
-                        <span className="font-semibold">{currentTenant?.name}</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-slate-100 space-y-3">
+                    <div className="font-bold text-slate-800 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Building className="h-4 w-4 text-blue-600" />
+                        <span>Workspace Organization</span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                          {currentTenant?.tier}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditOrgName(currentTenant?.name || '');
+                            setEditCountry(currentTenant?.settings?.orgMetadata?.country || 'US');
+                            setEditDepartment(currentTenant?.settings?.orgMetadata?.department || '');
+                            setEditState(currentTenant?.settings?.orgMetadata?.state || '');
+                            setEditLocality(currentTenant?.settings?.orgMetadata?.locality || '');
+                            setShowEditOrgModal(true);
+                          }}
+                          className="px-2 py-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                        >
+                          Edit Profile
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-slate-600 pt-1">
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-400">Company Legal Name (O)</span>
+                        <span className="font-semibold text-slate-800">{currentTenant?.name}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
                         <span className="text-slate-400">Workspace Slug</span>
                         <span className="font-mono">{currentTenant?.slug}</span>
                       </div>
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-400">Country Code (C)</span>
+                        <span className="font-mono font-bold text-slate-800">
+                          {currentTenant?.settings?.orgMetadata?.country || 'Not Set'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-400">Department / Unit (OU)</span>
+                        <span className="font-semibold text-slate-800">
+                          {currentTenant?.settings?.orgMetadata?.department || 'Not Set'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-400">State / Province (ST)</span>
+                        <span className="font-semibold text-slate-800">
+                          {currentTenant?.settings?.orgMetadata?.state || 'Not Set'}
+                        </span>
+                      </div>
                       <div className="flex justify-between">
-                        <span className="text-slate-400">Subscription Tier</span>
-                        <span className="font-bold text-blue-600">{currentTenant?.tier}</span>
+                        <span className="text-slate-400">City / Locality (L)</span>
+                        <span className="font-semibold text-slate-800">
+                          {currentTenant?.settings?.orgMetadata?.locality || 'Not Set'}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-slate-100 space-y-2">
+                  <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-slate-100 space-y-3">
                     <div className="font-bold text-slate-800 flex items-center gap-2">
                       <Shield className="h-4 w-4 text-emerald-600" />
-                      <span>Security & ACME Defaults</span>
+                      <span>Security, Quotas & ACME Defaults</span>
                     </div>
-                    <div className="space-y-1.5 text-slate-600 pt-1">
-                      <div className="flex justify-between">
+                    <div className="space-y-2 text-slate-600 pt-1">
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
                         <span className="text-slate-400">Auto-Renewal Window</span>
                         <span className="font-semibold">30 Days Before Expiry</span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
                         <span className="text-slate-400">Enforcement</span>
                         <span className="font-semibold text-emerald-600">Strict Zero-Trust mTLS</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-400">Max Certificates Quota</span>
+                        <span className="font-bold text-slate-800">{currentTenant?.maxCertificates || 50} Certs</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Max Gateways Allowed</span>
+                        <span className="font-bold text-slate-800">{currentTenant?.maxGateways || 2} Gateways</span>
                       </div>
                     </div>
                   </div>
@@ -4705,6 +4876,136 @@ ${selectedCert.fingerprintSha256.substring(0, 48)}
               </div>
             </form>
           </div>
+        </Modal>
+
+        {/* Edit Organization Legal Profile Modal */}
+        <Modal
+          isOpen={showEditOrgModal}
+          onClose={() => setShowEditOrgModal(false)}
+          title="Edit Organization Profile & CSR Defaults"
+          description="Update legal identity and geographical location used for X.509 certificate generation."
+        >
+          <form
+            onSubmit={async e => {
+              e.preventDefault();
+              if (!currentTenant?.id) return;
+              setIsSavingOrgSettings(true);
+              try {
+                const updatedTenant = await api.tenants.update(currentTenant.id, {
+                  name: editOrgName.trim(),
+                  settings: {
+                    orgMetadata: {
+                      organizationName: editOrgName.trim(),
+                      country: editCountry.trim().toUpperCase(),
+                      state: editState.trim(),
+                      locality: editLocality.trim(),
+                      department: editDepartment.trim(),
+                      contactEmail: currentTenant?.settings?.orgMetadata?.contactEmail,
+                    },
+                  },
+                });
+                setCurrentTenant(updatedTenant);
+                // Re-fetch directly from DB to verify persistence
+                await fetchTenantData();
+                toast.success('Organization Updated', 'Legal identity and CSR attributes saved to database.');
+                setShowEditOrgModal(false);
+              } catch (err: any) {
+                toast.error('Update Failed', err.message || 'Unable to update organization details.');
+              } finally {
+                setIsSavingOrgSettings(false);
+              }
+            }}
+            className="p-6 space-y-4"
+          >
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                Company Legal Name (O) *
+              </label>
+              <input
+                type="text"
+                required
+                value={editOrgName}
+                onChange={e => setEditOrgName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Country Code (C) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={2}
+                  value={editCountry}
+                  onChange={e => setEditCountry(e.target.value.toUpperCase())}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-mono focus:outline-none focus:border-blue-600"
+                />
+                <span className="text-[10px] text-slate-400">2-letter ISO (e.g. US, IN)</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Department / Unit (OU)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. SecOps"
+                  value={editDepartment}
+                  onChange={e => setEditDepartment(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  State / Province (ST)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. California"
+                  value={editState}
+                  onChange={e => setEditState(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  City / Locality (L)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. San Francisco"
+                  value={editLocality}
+                  onChange={e => setEditLocality(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowEditOrgModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingOrgSettings}
+                className="primary-gradient-btn px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                {isSavingOrgSettings && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                <span>Save Changes</span>
+              </button>
+            </div>
+          </form>
         </Modal>
 
         {/* Certificate Renewal Pre-fill & Approval Modal */}

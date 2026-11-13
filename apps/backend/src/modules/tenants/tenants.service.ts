@@ -32,6 +32,10 @@ export class TenantsService {
     adminFirstName: string;
     adminLastName?: string;
     marketplaceProvider?: string;
+    country?: string;
+    state?: string;
+    locality?: string;
+    department?: string;
   }): Promise<{ tenant: Tenant; adminUser: any }> {
     const baseSlug =
       dto.organizationName
