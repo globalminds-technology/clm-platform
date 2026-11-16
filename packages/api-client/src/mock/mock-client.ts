@@ -363,6 +363,10 @@ export class MockApiClient {
     logout: async (): Promise<void> => {
       await this.delay();
     },
+    checkEmail: async (_email: string): Promise<{ exists: boolean; message: string }> => {
+      await this.delay();
+      return { exists: false, message: 'Email is available.' };
+    },
     getMe: async (): Promise<User> => {
       await this.delay();
       return this._currentUser;

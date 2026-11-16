@@ -71,15 +71,10 @@ const api = createApiClient({
     const headers: Record<string, string> = {};
     try {
       const u = localStorage.getItem('clm_tenant_user');
-      const org = localStorage.getItem('clm_tenant_org');
       if (u) {
         const parsed = JSON.parse(u);
         if (parsed.tenantId) headers['x-tenant-id'] = String(parsed.tenantId);
         if (parsed.role) headers['x-user-role'] = String(parsed.role);
-      } else if (org) {
-        const parsedOrg = JSON.parse(org);
-        if (parsedOrg.id) headers['x-tenant-id'] = String(parsedOrg.id);
-        headers['x-user-role'] = 'TENANT_ADMIN';
       }
     } catch {}
     return headers;
@@ -114,6 +109,11 @@ export function App() {
   const [authMarketplace] = useState<CloudMarketplace>(CloudMarketplace.DIRECT);
   const [authTier, setAuthTier] = useState<SubscriptionTier>(SubscriptionTier.PROFESSIONAL);
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+  const [emailCheckStatus, setEmailCheckStatus] = useState<{
+    checking: boolean;
+    exists: boolean;
+    message?: string;
+  }>({ checking: false, exists: false });
 
   // Edit Organization Profile State
   const [showEditOrgModal, setShowEditOrgModal] = useState(false);
@@ -244,6 +244,35 @@ export function App() {
     return undefined;
   }, [currentTenant?.status, checkTenantVerificationStatus]);
 
+  // Debounced check email uniqueness on registration
+  useEffect(() => {
+    if (authMode !== 'signup') {
+      setEmailCheckStatus({ checking: false, exists: false });
+      return;
+    }
+    const cleanEmail = authEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setEmailCheckStatus({ checking: false, exists: false });
+      return;
+    }
+
+    setEmailCheckStatus(prev => ({ ...prev, checking: true }));
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.auth.checkEmail(cleanEmail);
+        setEmailCheckStatus({
+          checking: false,
+          exists: res.exists,
+          message: res.message,
+        });
+      } catch {
+        setEmailCheckStatus({ checking: false, exists: false });
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [authEmail, authMode]);
+
   // Auth Handlers
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -265,14 +294,12 @@ export function App() {
           const statusRes = await api.tenants.getMyStatus();
           if (statusRes && statusRes.tenant) {
             setCurrentTenant(statusRes.tenant);
-            localStorage.setItem('clm_tenant_org', JSON.stringify(statusRes.tenant));
           }
         } catch {
           try {
             const orgRes = await api.tenants.getById(res.user.tenantId);
             if (orgRes) {
               setCurrentTenant(orgRes);
-              localStorage.setItem('clm_tenant_org', JSON.stringify(orgRes));
             }
           } catch (e) {
             console.warn('Could not load tenant details from database', e);
@@ -299,7 +326,6 @@ export function App() {
         setCurrentTenant(res.tenant);
         setCurrentUser(res.user);
         setPublicView('home');
-        localStorage.setItem('clm_tenant_org', JSON.stringify(res.tenant));
         localStorage.setItem('clm_tenant_user', JSON.stringify(res.user));
         if (res.tokens?.accessToken) {
           localStorage.setItem('clm_access_token', res.tokens.accessToken);
@@ -426,13 +452,11 @@ export function App() {
         const statusRes = await api.tenants.getMyStatus();
         if (statusRes && statusRes.tenant) {
           setCurrentTenant(statusRes.tenant);
-          localStorage.setItem('clm_tenant_org', JSON.stringify(statusRes.tenant));
         }
       } catch {
         const orgRes = await api.tenants.getById(res.user.tenantId);
         if (orgRes) {
           setCurrentTenant(orgRes);
-          localStorage.setItem('clm_tenant_org', JSON.stringify(orgRes));
         }
       }
 
@@ -1325,15 +1349,43 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700">Work Email *</label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-700">Work Email *</label>
+                          {emailCheckStatus.checking && (
+                            <span className="text-[10px] text-blue-500 font-semibold animate-pulse">Checking availability...</span>
+                          )}
+                        </div>
                         <input
                           type="email"
                           required
                           placeholder="alex@acme.com"
                           value={authEmail}
                           onChange={e => setAuthEmail(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                          className={`w-full bg-slate-50 border rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none transition-colors ${
+                            emailCheckStatus.exists
+                              ? 'border-rose-400 bg-rose-50/40 focus:border-rose-500 focus:bg-white text-rose-900'
+                              : 'border-slate-200 focus:border-blue-500 focus:bg-white'
+                          }`}
                         />
+                        {emailCheckStatus.exists && (
+                          <div className="flex items-start gap-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-[11px] leading-tight">
+                            <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                            <div>
+                              <span className="font-bold">Email already registered: </span>
+                              <span>An account with this email already exists. Each email can only register one organization. </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAuthMode('signin');
+                                  setLoginErrorHint(false);
+                                }}
+                                className="font-bold underline text-rose-800 hover:text-rose-950 ml-1 inline-block cursor-pointer"
+                              >
+                                Sign in instead &rarr;
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
@@ -1393,14 +1445,23 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
 
                       <button
                         type="button"
+                        disabled={emailCheckStatus.exists || emailCheckStatus.checking}
                         onClick={() => {
                           if (!authOrgName.trim() || !authEmail.trim() || !authFirstName.trim() || !authPassword.trim()) {
                             toast.error('Missing Required Fields', 'Please complete company name, email, name, and password.');
                             return;
                           }
+                          if (emailCheckStatus.exists) {
+                            toast.error('Email Already Registered', 'A single email cannot register multiple organizations. Please sign in instead.');
+                            return;
+                          }
                           setSignupStep(2);
                         }}
-                        className="w-full py-3.5 rounded-2xl text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] cursor-pointer"
+                        className={`w-full py-3.5 rounded-2xl text-xs font-extrabold text-white shadow-xl flex items-center justify-center gap-2 transition-all ${
+                          emailCheckStatus.exists || emailCheckStatus.checking
+                            ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                            : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25 hover:scale-[1.01] cursor-pointer'
+                        }`}
                       >
                         <span>Continue to Step 2: Location &amp; CSR Details</span>
                         <ArrowRight className="h-4 w-4" />
@@ -1494,8 +1555,12 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
 
                         <button
                           type="submit"
-                          disabled={isSubmittingAuth}
-                          className="flex-1 py-3.5 rounded-2xl text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] cursor-pointer"
+                          disabled={isSubmittingAuth || emailCheckStatus.exists}
+                          className={`flex-1 py-3.5 rounded-2xl text-xs font-extrabold text-white shadow-xl flex items-center justify-center gap-2 transition-all ${
+                            isSubmittingAuth || emailCheckStatus.exists
+                              ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                              : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25 hover:scale-[1.01] cursor-pointer'
+                          }`}
                         >
                           {isSubmittingAuth ? (
                             <>

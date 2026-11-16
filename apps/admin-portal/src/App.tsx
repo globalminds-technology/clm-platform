@@ -98,11 +98,8 @@ export function App() {
       if (plansList && plansList.length > 0) {
         setPlans(plansList);
       }
-      if (tenantsList.length > 0 && !selectedTenantId) {
-        const first = tenantsList[0];
-        if (first) {
-          setSelectedTenantId(first.id);
-        }
+      if (tenantsList.length > 0) {
+        setSelectedTenantId(prev => prev || tenantsList[0]?.id || '');
       }
       setAuditLogs(globalAudit);
     } catch (err: any) {
@@ -120,19 +117,11 @@ export function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [adminUser, selectedTenantId]);
+  }, [adminUser]);
 
   useEffect(() => {
     fetchAdminData();
   }, [fetchAdminData]);
-  if (adminUser) {
-    fetchAdminData();
-  }
-  useEffect(() => {
-    if (adminUser) {
-      fetchAdminData();
-    }
-  }, [adminUser, fetchAdminData]);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();

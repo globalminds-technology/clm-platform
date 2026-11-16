@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Body,
+  Query,
   Res,
   Req,
   HttpCode,
@@ -20,6 +21,7 @@ import { Public } from './public.decorator';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
 import { TenantsService } from '../../modules/tenants/tenants.service';
+import { UsersService } from '../../modules/users/users.service';
 import { type RegisterTenantRequest } from '@clm/shared-types';
 
 @ApiTags('Auth')
@@ -28,6 +30,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly tenantsService: TenantsService,
+    private readonly usersService: UsersService,
   ) {}
 
   @Public()
@@ -165,6 +168,23 @@ export class AuthController {
     res.clearCookie('clm_refresh_token', { path: '/api/v1/auth' });
     res.clearCookie('clm_access_token', { path: '/' });
     return { success: true, message: 'Logged out successfully' };
+  }
+
+  @Public()
+  @Get('check-email')
+  @ApiOperation({ summary: 'Check if email is already registered across any organization' })
+  @ApiResponse({ status: 200, description: 'Email availability status' })
+  async checkEmail(@Query('email') email: string) {
+    if (!email || !email.trim()) {
+      return { exists: false };
+    }
+    const user = await this.usersService.findByEmailGlobal(email.trim());
+    return {
+      exists: !!user,
+      message: user
+        ? 'This email is already registered with an existing organization. Please sign in instead.'
+        : 'Email is available.',
+    };
   }
 
   @UseGuards(JwtAuthGuard)
