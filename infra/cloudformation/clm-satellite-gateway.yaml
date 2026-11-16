@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CLM Platform - Self-Service In-VPC Satellite Gateway Deployment Stack'
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: The target customer VPC where the Satellite Gateway will be placed.
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet where the Gateway EC2 instance will run (Public subnet or private subnet with NAT).
+
+  EnrollmentToken:
+    Type: String
+    NoEcho: true
+    Description: Single-use bootstrap enrollment token generated from the CLM Customer Portal.
+
+  ControlPlaneUrl:
+    Type: String
+    Default: 'https://api.clm-platform.com/api/v1'
+    Description: Central CLM SaaS Control Plane API URL for outbound mTLS/HTTPS polling.
+
+  InstanceType:
+    Type: String
+    Default: 't3.micro'
+    AllowedValues:
+      - 't3.nano'
+      - 't3.micro'
+      - 't3.small'
+      - 't4g.micro'
+      - 't4g.small'
+    Description: EC2 Instance Type for the Gateway daemon.
+
+Resources:
+  # 1. IAM Role for Local AWS ACM & ALB Operations
+  GatewayInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'CLM-Satellite-Gateway-Role-${AWS::StackName}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AWSCertificateManagerFullAccess'
+        - 'arn:aws:iam::aws:policy/ElasticLoadBalancingReadOnly'
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+
+  GatewayInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub 'CLM-Gateway-Profile-${AWS::StackName}'
+      Roles:
+        - !Ref GatewayInstanceRole
+
+  # 2. Zero-Trust Security Group (No Inbound Ports)
+  GatewaySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'CLM Satellite Gateway - Outbound-only zero-trust security group'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: []
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: 'Outbound HTTPS to CLM SaaS control plane and AWS API endpoints'
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: 'Outbound HTTP for package installation and repository updates'
+
+  # 3. EC2 Instance Launching the Gateway Daemon
+  GatewayInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref GatewayInstanceProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref GatewaySecurityGroup
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      Tags:
+        - Key: Name
+          Value: !Sub 'clm-satellite-gateway-${AWS::StackName}'
+        - Key: ManagedBy
+          Value: 'CLM-Platform'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+          echo "Bootstrapping CLM Satellite Gateway..."
+          dnf install -y nodejs curl
+          curl -sSL "${ControlPlaneUrl}/ingress/gateway/install.sh" | bash -s -- --token "${EnrollmentToken}" --control-plane "${ControlPlaneUrl}"
+
+Outputs:
+  GatewayInstanceId:
+    Description: EC2 Instance ID of the deployed Satellite Gateway
+    Value: !Ref GatewayInstance
+
+  SecurityGroupId:
+    Description: Security Group with zero open inbound ports
+    Value: !Ref GatewaySecurityGroup
