@@ -72,13 +72,28 @@ export class TenantsRepository {
     passwordHash: string,
   ): Promise<{ tenant: Tenant; adminUser: any }> {
     return this.tenantContextService.withSystemContext(async client => {
+      const normalizedEmail = dto.adminEmail.toLowerCase().trim();
+
+      // 0. Ensure email is strictly unique across all organizations
+      const existingUserRes = await client.query(
+        'SELECT id, tenant_id FROM users WHERE LOWER(email) = $1 LIMIT 1;',
+        [normalizedEmail],
+      );
+      if (existingUserRes.rows.length > 0) {
+        const error: any = new Error(
+          `An account with email '${dto.adminEmail}' already exists. A single email cannot register multiple organizations. Please sign in instead.`,
+        );
+        error.code = '23505'; // Unique violation code
+        throw error;
+      }
+
       const orgMetadata = {
         organizationName: dto.organizationName,
         department: dto.department || '',
         country: (dto.country || '').substring(0, 2).toUpperCase(),
         state: dto.state || '',
         locality: dto.locality || '',
-        contactEmail: dto.adminEmail.toLowerCase().trim(),
+        contactEmail: normalizedEmail,
       };
 
       const settings = {

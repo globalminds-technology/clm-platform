@@ -37,6 +37,10 @@ export class AuthEndpoint {
     return this.http.post<void>('auth/logout');
   }
 
+  checkEmail(email: string): Promise<{ exists: boolean; message: string }> {
+    return this.http.get<{ exists: boolean; message: string }>(`auth/check-email?email=${encodeURIComponent(email)}`);
+  }
+
   getMe(): Promise<User> {
     return this.http.get<User>('auth/me');
   }

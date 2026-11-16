@@ -1,6 +1,57 @@
-import { IsString, IsOptional, IsEnum, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsNumber, Min, ValidateNested, IsBoolean } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TenantStatus, SubscriptionTier, type UpdateTenantRequest } from '@clm/shared-types';
+
+export class UpdateTenantOrgMetadataDto {
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  organizationName?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  department?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  country?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  state?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  locality?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  contactEmail?: string;
+}
+
+export class UpdateTenantSettingsDto {
+  @ApiPropertyOptional()
+  @IsNumber()
+  @IsOptional()
+  defaultRenewalWindowDays?: number;
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  emailAlerts?: boolean;
+
+  @ApiPropertyOptional({ type: () => UpdateTenantOrgMetadataDto })
+  @ValidateNested()
+  @Type(() => UpdateTenantOrgMetadataDto)
+  @IsOptional()
+  orgMetadata?: UpdateTenantOrgMetadataDto;
+}
 
 export class UpdateTenantDto implements UpdateTenantRequest {
   @ApiPropertyOptional({ example: 'Stripe Global Services Updated' })
@@ -30,8 +81,10 @@ export class UpdateTenantDto implements UpdateTenantRequest {
   @IsOptional()
   maxGateways?: number;
 
-  @ApiPropertyOptional({ description: 'Tenant settings and org metadata' })
+  @ApiPropertyOptional({ type: () => UpdateTenantSettingsDto, description: 'Tenant settings and org metadata' })
+  @ValidateNested()
+  @Type(() => UpdateTenantSettingsDto)
   @IsOptional()
-  settings?: any;
+  settings?: UpdateTenantSettingsDto;
 }
 
