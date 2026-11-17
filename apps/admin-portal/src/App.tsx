@@ -15,7 +15,6 @@ import {
   BarChart3,
   TrendingUp,
   ArrowUpRight,
-  RefreshCw,
   Clock,
 } from 'lucide-react';
 import {
@@ -53,7 +52,7 @@ export function App() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [plans, setPlans] = useState<PlanDefinition[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [, setIsLoading] = useState(true);
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'audit' | 'marketplace'>('tenants');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PENDING_APPROVAL' | 'TRIAL' | 'SUSPENDED'>('ALL');
@@ -577,15 +576,6 @@ export function App() {
           userInitials="SA"
           actionButton={
             <div className="flex items-center gap-2">
-              <button
-                onClick={fetchAdminData}
-                disabled={isLoading}
-                title="Refresh from PostgreSQL"
-                className="px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${isLoading ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Sync DB</span>
-              </button>
               <button
                 onClick={handleAdminLogout}
                 title="Sign out of Super Admin"

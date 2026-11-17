@@ -1836,7 +1836,6 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
           <footer className="border-t border-slate-200/80 py-6 px-6 text-center text-xs text-slate-500 relative z-10 bg-white/70 backdrop-blur-sm">
             <div className="max-w-6xl mx-auto flex items-center justify-between">
               <span>&copy; 2026 CLM Platform Inc.</span>
-              <span className="text-[11px] text-emerald-600 font-semibold">PostgreSQL RLS Protected</span>
             </div>
           </footer>
         </div>
@@ -1847,7 +1846,7 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
     // Comprehensive Home Page: Pure Application Overview (8 Detailed Sections)
     // -----------------------------------------------------------------------
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans selection:bg-blue-500/20 selection:text-blue-600 flex flex-col relative overflow-x-hidden">
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans selection:bg-blue-500/20 selection:text-blue-600 flex flex-col relative pt-[73px]">
         <Toaster position="top-right" />
 
         {/* Full-Page Clean Light Square Grid (No Cursor Effect) */}
@@ -1869,8 +1868,8 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
           />
         </div>
 
-        {/* Top Navigation Bar */}
-        <header className="sticky top-0 z-50 backdrop-blur-xl bg-white/85 border-b border-slate-200/80 px-6 py-4 shadow-sm">
+        {/* Top Navigation Bar - Constant Fixed Header */}
+        <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-white/95 border-b border-slate-200/80 px-6 py-4 shadow-sm">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/25">
@@ -1878,9 +1877,6 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
               </div>
               <div>
                 <span className="font-black text-lg tracking-tight text-slate-900">CLM Platform</span>
-                <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-50 text-blue-700 border border-blue-200">
-                  Zero-Trust PKI
-                </span>
               </div>
             </div>
 
@@ -1896,13 +1892,6 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
 
             <div className="flex items-center gap-3">
               <button
-                onClick={handleLoadDemoSandbox}
-                className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 text-xs font-bold transition-all shadow-sm"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-                <span>Demo Sandbox</span>
-              </button>
-              <button
                 onClick={() => {
                   setAuthMode('signin');
                   setPublicView('auth');
@@ -1910,15 +1899,6 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
                 className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 shadow-sm transition-all"
               >
                 Sign In
-              </button>
-              <button
-                onClick={() => {
-                  setAuthMode('signup');
-                  setPublicView('auth');
-                }}
-                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-xl text-xs font-bold text-white shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02]"
-              >
-                Deploy Free
               </button>
             </div>
           </div>
@@ -1966,29 +1946,12 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
             <div className="pt-2 flex flex-wrap items-center justify-center gap-3.5">
               <button
                 onClick={() => {
-                  setAuthMode('signup');
-                  setPublicView('auth');
-                }}
-                className="bg-blue-600 hover:bg-blue-700 px-6 py-3.5 rounded-2xl text-xs font-black text-white shadow-xl shadow-blue-500/25 flex items-center gap-2 hover:scale-[1.02] transition-all"
-              >
-                <span>Deploy Free Tenant Workspace</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => {
                   setAuthMode('signin');
                   setPublicView('auth');
                 }}
-                className="px-5 py-3.5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 shadow-sm transition-all"
+                className="px-6 py-3.5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 shadow-sm transition-all"
               >
                 Sign In to Workspace
-              </button>
-              <button
-                onClick={handleLoadDemoSandbox}
-                className="px-4 py-3.5 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-bold text-amber-800 transition-all flex items-center gap-1.5 shadow-sm"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-                <span>Launch Demo Sandbox</span>
               </button>
             </div>
 
@@ -2410,51 +2373,12 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
           </div>
         </section>
 
-        {/* =================================================================== */}
-        {/* SECTION 8: Conversion CTA Banner & Enterprise Footer                */}
-        {/* =================================================================== */}
-        <section className="relative z-10 py-16 px-6 max-w-7xl mx-auto w-full">
-          <div className="p-10 sm:p-14 rounded-[36px] bg-gradient-to-r from-blue-50 via-indigo-50 to-cyan-50 border border-blue-200 text-center space-y-6 shadow-sm relative overflow-hidden">
-            <div className="max-w-2xl mx-auto space-y-3">
-              <h2 className="text-3xl sm:text-4xl font-black text-slate-900">
-                Eliminate TLS Expiration Outages Forever.
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-600">
-                Deploy your organization in 60 seconds. Provision VPC gateways, automate ACME issuance, and enjoy zero-downtime certificate lifecycles.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
-              <button
-                onClick={() => {
-                  setAuthMode('signup');
-                  setPublicView('auth');
-                }}
-                className="bg-blue-600 hover:bg-blue-700 px-6 py-3.5 rounded-2xl text-xs font-extrabold text-white shadow-xl shadow-blue-500/25 flex items-center gap-2 hover:scale-[1.02] transition-all"
-              >
-                <span>Deploy Free Workspace</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-              <button
-                onClick={handleLoadDemoSandbox}
-                className="px-5 py-3.5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-bold text-slate-800 shadow-sm transition-all"
-              >
-                Launch Demo Sandbox
-              </button>
-            </div>
-          </div>
-        </section>
-
         {/* Public Footer */}
         <footer className="relative z-10 mt-auto border-t border-slate-200/80 py-8 px-6 text-center text-xs text-slate-500 bg-white/70 backdrop-blur-sm">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-blue-600" />
               <span>&copy; 2026 CLM Platform Inc. All rights reserved.</span>
-            </div>
-            <div className="flex items-center gap-2 text-[11px] text-emerald-600 font-semibold">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>All Systems Operational &bull; PostgreSQL RLS Enforced</span>
             </div>
           </div>
         </footer>
