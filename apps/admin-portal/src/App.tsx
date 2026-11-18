@@ -12,6 +12,7 @@ import {
   Cpu,
   Shield,
   ShieldAlert,
+  ShieldCheck,
   BarChart3,
   TrendingUp,
   ArrowUpRight,
@@ -26,6 +27,8 @@ import {
 } from '@clm/shared-types';
 import { Sidebar, StatusBadge, TopHeader, Modal, ConfirmDialog, Toaster, toast } from '@clm/ui';
 import { createApiClient } from '@clm/api-client';
+import { PlatformHealthView } from './features/platform-health';
+import { VerificationQueueView } from './features/verifications';
 
 const api = createApiClient({
   baseUrl: (import.meta as any).env?.VITE_API_URL || 'http://localhost:4000/api/v1',
@@ -54,7 +57,7 @@ export function App() {
   const [plans, setPlans] = useState<PlanDefinition[]>([]);
   const [, setIsLoading] = useState(true);
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'audit' | 'marketplace'>('tenants');
+  const [activeTab, setActiveTab] = useState<'tenants' | 'verifications' | 'plans' | 'health' | 'audit' | 'marketplace'>('tenants');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PENDING_APPROVAL' | 'TRIAL' | 'SUSPENDED'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -380,6 +383,8 @@ export function App() {
   });
 
   // Reusable Sidebar Nav Items
+  const pendingCount = tenants.filter(t => t.status === TenantStatus.PENDING_APPROVAL).length;
+
   const navItems = [
     {
       id: 'tenants',
@@ -390,12 +395,27 @@ export function App() {
       onClick: () => setActiveTab('tenants'),
     },
     {
+      id: 'verifications',
+      label: 'Verifications',
+      icon: <ShieldCheck className="h-5 w-5" />,
+      badge: pendingCount > 0 ? pendingCount : undefined,
+      active: activeTab === 'verifications',
+      onClick: () => setActiveTab('verifications'),
+    },
+    {
       id: 'plans',
       label: 'Subscription Plans',
       icon: <Layers className="h-5 w-5" />,
       badge: plans.length > 0 ? plans.length : 4,
       active: activeTab === 'plans',
       onClick: () => setActiveTab('plans'),
+    },
+    {
+      id: 'health',
+      label: 'Platform Health',
+      icon: <Cpu className="h-5 w-5" />,
+      active: activeTab === 'health',
+      onClick: () => setActiveTab('health'),
     },
     {
       id: 'audit',
@@ -544,8 +564,12 @@ export function App() {
           icon={
             activeTab === 'tenants' ? (
               <Building2 className="h-5 w-5 text-blue-600" />
+            ) : activeTab === 'verifications' ? (
+              <ShieldCheck className="h-5 w-5 text-blue-600" />
             ) : activeTab === 'plans' ? (
               <Layers className="h-5 w-5 text-blue-600" />
+            ) : activeTab === 'health' ? (
+              <Cpu className="h-5 w-5 text-blue-600" />
             ) : activeTab === 'audit' ? (
               <FileText className="h-5 w-5 text-blue-600" />
             ) : (
@@ -555,53 +579,61 @@ export function App() {
           title={
             activeTab === 'tenants'
               ? 'Tenant Organizations'
-              : activeTab === 'plans'
-                ? 'Subscription Plans & Tiers'
-                : activeTab === 'audit'
-                  ? 'Global Audit Ledger'
-                  : 'Workspace Usage & Cloud Billing'
+              : activeTab === 'verifications'
+        ? 'Domain & Security Verification'
+        : activeTab === 'plans'
+        ? 'Subscription Plans & Tiers'
+        : activeTab === 'health'
+        ? 'Autonomous Daemons & System Health'
+        : activeTab === 'audit'
+        ? 'Global Audit Ledger'
+        : 'Workspace Usage & Cloud Billing'
           }
-          subtitle={
-            activeTab === 'tenants'
-              ? 'Provision, manage and monitor subscriber SaaS workspaces under Row-Level Security.'
-              : activeTab === 'plans'
-                ? 'Configure subscription plan tiers, certificate & gateway quotas, and scheduled effective dates.'
-                : activeTab === 'audit'
-                  ? 'Immutable platform audit trail across all tenant organizations and gateway daemons.'
-                  : 'Live certificate utilization, gateway fleet capacity, and cloud billing breakdown from PostgreSQL.'
+        subtitle={
+          activeTab === 'tenants'
+            ? 'Provision, manage and monitor subscriber SaaS workspaces under Row-Level Security.'
+              : activeTab === 'verifications'
+        ? 'Review pending tenant domain claims and verify DNS ownership before workspace activation.'
+        : activeTab === 'plans'
+        ? 'Configure subscription plan tiers, certificate & gateway quotas, and scheduled effective dates.'
+        : activeTab === 'health'
+        ? 'Real-time telemetry of the autonomous renewal engine, cron queue, and satellite gateway broker.'
+        : activeTab === 'audit'
+        ? 'Immutable platform audit trail across all tenant organizations and gateway daemons.'
+        : 'Live certificate utilization, gateway fleet capacity, and cloud billing breakdown from PostgreSQL.'
           }
-          searchValue={searchTerm}
-          onSearchChange={setSearchTerm}
-          searchPlaceholder="Search organizations or accounts..."
-          userInitials="SA"
-          actionButton={
-            <div className="flex items-center gap-2">
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search organizations or accounts..."
+        userInitials="SA"
+        actionButton={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAdminLogout}
+              title="Sign out of Super Admin"
+              className="px-3 py-2 rounded-full text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors shadow-sm"
+            >
+              Sign Out
+            </button>
+            {activeTab === 'plans' ? (
               <button
-                onClick={handleAdminLogout}
-                title="Sign out of Super Admin"
-                className="px-3 py-2 rounded-full text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors shadow-sm"
+                onClick={() => setIsAddPlanModalOpen(true)}
+                className="primary-gradient-btn px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20"
               >
-                Sign Out
+                <Plus className="h-4 w-4" />
+                <span>Add Custom Plan</span>
               </button>
-              {activeTab === 'plans' ? (
-                <button
-                  onClick={() => setIsAddPlanModalOpen(true)}
-                  className="primary-gradient-btn px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Add Custom Plan</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="primary-gradient-btn px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Add Organization</span>
-                </button>
-              )}
-            </div>
-          }
+            ) : (
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="primary-gradient-btn px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Organization</span>
+              </button>
+            )}
+          </div>
+        }
         />
 
         {/* Global Database Error Banner */}
@@ -911,6 +943,19 @@ export function App() {
             </div>
           </div>
         )}
+
+        {/* Tab: Tenant Domain & Identity Verifications */}
+        {activeTab === 'verifications' && (
+          <VerificationQueueView
+            tenants={tenants}
+            onTenantApproved={(_id) => {
+              fetchAdminData();
+            }}
+          />
+        )}
+
+        {/* Tab: Platform Health & Autonomous Daemons */}
+        {activeTab === 'health' && <PlatformHealthView />}
 
         {/* Tab 2: Global Audit View */}
         {activeTab === 'audit' && (

@@ -11,4 +11,5 @@ export * from './components/Drawer';
 export * from './components/ConfirmDialog';
 export * from './components/PasswordInput';
 export * from './components/Toast';
+export * from './components/Tooltip';
 

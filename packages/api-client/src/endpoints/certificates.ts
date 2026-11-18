@@ -46,12 +46,16 @@ export class CertificatesEndpoint {
     return this.http.post<Certificate>(`certificates/${id}/renew`, data);
   }
 
-    revoke(id: string, data ?: RevokeCertificateRequest): Promise < Certificate > {
-      return this.http.post<Certificate>(`certificates/${id}/revoke`, data || { reason: 'UNSPECIFIED' });
-    }
+  revoke(id: string, data?: RevokeCertificateRequest): Promise<Certificate> {
+    return this.http.post<Certificate>(`certificates/${id}/revoke`, data || { reason: 'UNSPECIFIED' });
+  }
 
     deploy(id: string, gatewayId ?: string): Promise < { success: boolean; commandId: string; message?: string } > {
       return this.http.post<{ success: boolean; commandId: string; message?: string }>(`certificates/${id}/deploy`, { gatewayId });
+    }
+
+    delete (id: string): Promise < void> {
+      return this.http.delete<void>(`certificates/${id}`);
     }
   }
 
