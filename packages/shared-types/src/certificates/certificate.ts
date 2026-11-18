@@ -1,4 +1,5 @@
 import { CertStatus, KeyAlgorithm, ValidationMethod, CertificateTrackingMode } from './cert-status';
+import type { CaIntegration } from '../ca-integrations';
 
 export interface Certificate {
   id: string;
@@ -17,6 +18,11 @@ export interface Certificate {
   autoRenew: boolean;
   renewBeforeDays: number;
   gatewayId?: string | null;
+  caIntegrationId?: string | null;
+  cloudAccountId?: string | null;
+  deploymentTargetType?: string;
+  revocationReason?: string | null;
+  revokedAt?: string | null;
   deployTargetCount: number;
   lastRenewedAt?: string | null;
   createdAt: string;
@@ -59,6 +65,9 @@ export interface CreateCertificateRequest {
   autoRenew?: boolean;
   renewBeforeDays?: number;
   gatewayId?: string;
+  caIntegrationId?: string;
+  cloudAccountId?: string;
+  deploymentTargetType?: string;
   issuer?: string;
   notBefore?: string;
   notAfter?: string;
@@ -108,12 +117,16 @@ export interface RenewalContextResponse {
   maxCertificates: number;
   currentCertificatesCount: number;
   allowedCaProviders: string[];
+  connectedCaIntegrations?: CaIntegration[];
+  currentCaIntegrationId?: string;
+  currentCloudAccountId?: string;
 }
 
 export interface RenewCertificateRequest {
   forceRenew?: boolean;
   renewBeforeDays?: number;
   keyAlgorithm?: KeyAlgorithm;
+  caIntegrationId?: string;
   cloudAccountId?: string;
   csrOverridePem?: string;
   caProvider?: 'LETS_ENCRYPT' | 'DIGICERT' | 'SECTIGO' | 'AWS_ACM';

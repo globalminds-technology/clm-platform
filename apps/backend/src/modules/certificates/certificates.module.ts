@@ -9,6 +9,7 @@ import { CryptoModule } from '../../shared/crypto/crypto.module';
 import { CloudAccountsModule } from '../cloud-accounts/cloud-accounts.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { GatewaysModule } from '../gateways/gateways.module';
+import { CaIntegrationsModule } from '../ca-integrations/ca-integrations.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { GatewaysModule } from '../gateways/gateways.module';
     forwardRef(() => CloudAccountsModule),
     TenantsModule,
     GatewaysModule,
+    CaIntegrationsModule,
   ],
   controllers: [CertificatesController],
   providers: [CertificatesService, CertificatesRepository, CaDriverService],

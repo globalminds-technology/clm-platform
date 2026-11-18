@@ -8,6 +8,7 @@ import { AuthEndpoint } from './endpoints/auth';
 import { UsersEndpoint } from './endpoints/users';
 import { PlansEndpoint } from './endpoints/plans';
 import { CloudAccountsEndpoint } from './endpoints/cloud-accounts';
+import { CaIntegrationsEndpoint } from './endpoints/ca-integrations';
 import { SchedulerEndpoint } from './endpoints/scheduler';
 import { MockApiClient } from './mock/mock-client';
 
@@ -25,6 +26,7 @@ export interface ApiClient {
   users: UsersEndpoint;
   plans: PlansEndpoint;
   cloudAccounts: CloudAccountsEndpoint;
+  caIntegrations: CaIntegrationsEndpoint;
   scheduler: SchedulerEndpoint;
   http?: HttpClient;
   setDefaultHeaders?: (headers: Record<string, string>) => void;
@@ -54,6 +56,7 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
     users: new UsersEndpoint(http),
     plans: new PlansEndpoint(http),
     cloudAccounts: new CloudAccountsEndpoint(http),
+    caIntegrations: new CaIntegrationsEndpoint(http),
     scheduler: new SchedulerEndpoint(http),
   };
 }

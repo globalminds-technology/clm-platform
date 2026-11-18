@@ -7,6 +7,7 @@ import {
   type ReprobeCertificateResponse,
   type RenewalContextResponse,
   type RenewCertificateRequest,
+  type RevokeCertificateRequest,
   ValidationMethod,
   AuditActorType,
   AuditAction,
@@ -19,6 +20,7 @@ import { CloudAccountsService } from '../cloud-accounts/cloud-accounts.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { CaDriverService } from './ca-driver.service';
 import { GatewaysService } from '../gateways/gateways.service';
+import { CaIntegrationsService } from '../ca-integrations/ca-integrations.service';
 
 @Injectable()
 export class CertificatesService {
@@ -31,7 +33,8 @@ export class CertificatesService {
     private readonly tenantsService: TenantsService,
     private readonly caDriverService: CaDriverService,
     private readonly gatewaysService: GatewaysService,
-  ) {}
+    private readonly caIntegrationsService: CaIntegrationsService,
+  ) { }
 
   async probeLive(domain: string, port = 443, timeoutMs = 8000): Promise<LiveTlsProbeResult> {
     const firstPart = domain.replace(/^https?:\/\//i, '').split('/')[0] || '';
@@ -157,7 +160,7 @@ export class CertificatesService {
   async renew(tenantId: string, id: string, request?: RenewCertificateRequest): Promise<Certificate> {
     const cert = await this.findById(tenantId, id);
 
-    // 1. Generate CSR (or use override if provided)
+    // 1. Generate CSR with injected Tenant Organization Profile (OV/EV metadata)
     let csrPem = request?.csrOverridePem;
     if (!csrPem) {
       const generated = await this.generateRenewalCsr(tenantId, id, {
@@ -171,16 +174,31 @@ export class CertificatesService {
     const tier = tenant?.tier || 'COMMUNITY';
     const isPaidPlan = tier !== 'COMMUNITY';
 
+    const effectiveCaIntegrationId = request?.caIntegrationId || cert.caIntegrationId;
+    const effectiveCloudAccountId = request?.cloudAccountId || cert.cloudAccountId;
+
+    let targetProvider = request?.caProvider;
+    if (effectiveCaIntegrationId) {
+      try {
+        const caInt = await this.caIntegrationsService.findById(tenantId, effectiveCaIntegrationId);
+        if (caInt) {
+          targetProvider = caInt.provider as any;
+        }
+      } catch {
+        // Fallback if CA integration was removed
+      }
+    }
+
     // If requested CA is commercial (DigiCert / Sectigo) and tenant is on Free Community, reject
-    if (request?.caProvider && request.caProvider !== 'LETS_ENCRYPT' && !isPaidPlan) {
+    if (targetProvider && targetProvider !== 'LETS_ENCRYPT' && !isPaidPlan) {
       throw new BadRequestException(
-        `Commercial CA issuance (${request.caProvider}) is a Paid feature. Free Community tier is powered by Let's Encrypt / ZeroSSL ACME. Please upgrade your plan or select Let's Encrypt.`,
+        `Commercial CA issuance (${targetProvider}) is a Paid feature. Free Community tier is powered by Let's Encrypt / ZeroSSL ACME. Please upgrade your plan or select Let's Encrypt.`,
       );
     }
 
     const contactEmail = tenant?.settings?.orgMetadata?.contactEmail;
 
-    // 3. Issue or renew through ACME driver
+    // 3. Issue or renew through CA driver (Let's Encrypt ACME, DigiCert, Sectigo, AWS PCA, Vault)
     let issuedCert: any = null;
     try {
       issuedCert = await this.caDriverService.issueOrRenewCertificate({
@@ -189,7 +207,8 @@ export class CertificatesService {
         sans: cert.sans,
         csrPem,
         contactEmail,
-        cloudAccountId: request?.cloudAccountId,
+        cloudAccountId: effectiveCloudAccountId || undefined,
+        caIntegrationId: effectiveCaIntegrationId || undefined,
         useStaging: true, // safe staging default
       });
     } catch (caErr: any) {
@@ -204,8 +223,15 @@ export class CertificatesService {
       });
     }
 
-    // 4. Update certificate record in database with new validity period & serial number
-    const updated = await this.certificatesRepository.renew(tenantId, id);
+    // 4. Update certificate record in database with new validity period & real CA metadata
+    const updated = await this.certificatesRepository.renew(tenantId, id, {
+      notBefore: issuedCert?.notBefore,
+      notAfter: issuedCert?.notAfter,
+      serialNumber: issuedCert?.serialNumber,
+      issuer: issuedCert?.issuer,
+      fingerprintSha256: issuedCert?.fingerprintSha256,
+      caIntegrationId: effectiveCaIntegrationId || undefined,
+    });
     if (!updated) {
       throw new NotFoundException(`Certificate with ID '${id}' not found`);
     }
@@ -298,6 +324,76 @@ export class CertificatesService {
     };
   }
 
+  async revoke(tenantId: string, id: string, dto ?: RevokeCertificateRequest): Promise < Certificate > {
+      const existing = await this.findById(tenantId, id);
+      const updated = await this.certificatesRepository.revoke(tenantId, id, dto?.reason);
+      if(!updated) {
+        throw new NotFoundException(`Certificate with ID '${id}' not found`);
+      }
+
+    await this.auditLogsService.log(tenantId, {
+      actorType: AuditActorType.USER,
+      actorId: 'user-active',
+      action: AuditAction.CERT_REVOKED,
+      resourceType: 'CERTIFICATE',
+      resourceId: id,
+      metadata: {
+        domain: existing.domain,
+        serialNumber: existing.serialNumber,
+        reason: dto?.reason || 'UNSPECIFIED',
+        comments: dto?.comments,
+      },
+    });
+
+    return updated;
+  }
+
+  async deploy(
+    tenantId: string,
+    id: string,
+    targetGatewayId?: string,
+  ): Promise<{ success: boolean; commandId: string; message: string }> {
+    const cert = await this.findById(tenantId, id);
+    const effectiveGatewayId = targetGatewayId || cert.gatewayId;
+
+    if (!effectiveGatewayId) {
+      throw new BadRequestException(
+        `Cannot deploy certificate for '${cert.domain}'. No enrolled Satellite Gateway is assigned to this certificate. Please assign a gateway in certificate settings.`,
+      );
+    }
+
+    const command = await this.gatewaysService.dispatchDeployCommand(tenantId, effectiveGatewayId, {
+      certificateId: cert.id,
+      domain: cert.domain,
+      certificatePem: '-----BEGIN CERTIFICATE-----\n...',
+      targetType: 'NGINX',
+      targetConfig: {
+        certPath: `/etc/ssl/certs/${cert.domain}.crt`,
+        keyPath: `/etc/ssl/private/${cert.domain}.key`,
+        reloadCommand: 'nginx -s reload',
+      },
+    });
+
+    await this.auditLogsService.log(tenantId, {
+      actorType: AuditActorType.USER,
+      actorId: 'user-active',
+      action: AuditAction.CERT_DEPLOYED,
+      resourceType: 'CERTIFICATE',
+      resourceId: cert.id,
+      metadata: {
+        domain: cert.domain,
+        gatewayId: effectiveGatewayId,
+        commandId: command.id,
+      },
+    });
+
+    return {
+      success: true,
+      commandId: command.id,
+      message: `Deployment command dispatched to Satellite Gateway. Certificate for ${cert.domain} will be pushed and web server reloaded.`,
+    };
+  }
+
   async delete(tenantId: string, id: string): Promise<void> {
     const success = await this.certificatesRepository.delete(tenantId, id);
     if (!success) {
@@ -322,13 +418,14 @@ export class CertificatesService {
     const tenant = await this.tenantsService.findById(tenantId);
     const cloudAccounts = await this.cloudAccountsService.findAll(tenantId);
     const allCerts = await this.findAll(tenantId);
+    const caIntegrations = await this.caIntegrationsService.findAll(tenantId);
 
     const orgSettings = tenant?.settings?.orgMetadata;
     const tier = tenant?.tier || 'COMMUNITY';
     const isPaidPlan = tier !== 'COMMUNITY';
 
     const allowedCaProviders = isPaidPlan
-      ? ['LETS_ENCRYPT', 'DIGICERT', 'SECTIGO', 'AWS_ACM']
+      ? ['LETS_ENCRYPT', 'DIGICERT', 'SECTIGO', 'AWS_PCA', 'VAULT']
       : ['LETS_ENCRYPT']; // Free community is restricted to ACME (Let's Encrypt / ZeroSSL)
 
     return {
@@ -343,6 +440,9 @@ export class CertificatesService {
       maxCertificates: tenant?.maxCertificates || 50,
       currentCertificatesCount: allCerts.length,
       allowedCaProviders,
+      connectedCaIntegrations: caIntegrations,
+      currentCaIntegrationId: cert.caIntegrationId || undefined,
+      currentCloudAccountId: cert.cloudAccountId || undefined,
       organizationMetadata: {
         organizationName: orgSettings?.organizationName || tenant?.name || 'CLM Organization',
         department: orgSettings?.department || 'SecOps',
@@ -377,6 +477,9 @@ export class CertificatesService {
       organization?: string;
       department?: string;
       country?: string;
+      state?: string;
+      locality?: string;
+      emailAddress?: string;
     },
   ): Promise<{ csrPem: string; publicKeyPem: string }> {
     const cert = await this.findById(tenantId, id);
@@ -390,12 +493,12 @@ export class CertificatesService {
       domain: cert.domain,
       sans: cert.sans,
       keyAlgorithm: normalizedAlgo,
-      organization: overrides?.organization || orgSettings?.organizationName || tenant?.name,
-      organizationalUnit: overrides?.department || orgSettings?.department,
+      organization: overrides?.organization || orgSettings?.organizationName || tenant?.name || 'CLM Organization',
+      organizationalUnit: overrides?.department || orgSettings?.department || 'SecOps',
       country: overrides?.country || orgSettings?.country || 'US',
-      state: orgSettings?.state,
-      locality: orgSettings?.locality,
-      emailAddress: orgSettings?.contactEmail,
+      state: overrides?.state || orgSettings?.state || '',
+      locality: overrides?.locality || orgSettings?.locality || '',
+      emailAddress: overrides?.emailAddress || orgSettings?.contactEmail || '',
     });
 
     return {

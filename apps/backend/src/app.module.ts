@@ -13,6 +13,7 @@ import { TenantsModule } from './modules/tenants/tenants.module';
 import { PlansModule } from './modules/plans/plans.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { CloudAccountsModule } from './modules/cloud-accounts/cloud-accounts.module';
+import { CaIntegrationsModule } from './modules/ca-integrations/ca-integrations.module';
 import { LifecycleSchedulerModule } from './modules/lifecycle-scheduler/lifecycle-scheduler.module';
 
 @Module({
@@ -34,6 +35,7 @@ import { LifecycleSchedulerModule } from './modules/lifecycle-scheduler/lifecycl
     GatewaysModule,
     AuditLogsModule,
     CloudAccountsModule,
+    CaIntegrationsModule,
     LifecycleSchedulerModule,
   ],
 })

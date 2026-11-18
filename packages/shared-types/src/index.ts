@@ -6,4 +6,5 @@ export * from './tenancy';
 export * from './audit';
 export * from './common';
 export * from './cloud-accounts';
+export * from './ca-integrations';
 
