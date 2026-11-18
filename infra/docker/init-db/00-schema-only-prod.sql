@@ -118,6 +118,11 @@ CREATE TABLE IF NOT EXISTS certificates (
     auto_renew BOOLEAN NOT NULL DEFAULT true,
     renew_before_days INT NOT NULL DEFAULT 30,
     gateway_id UUID REFERENCES gateways (id) ON DELETE SET NULL,
+    ca_integration_id UUID REFERENCES ca_integrations (id) ON DELETE SET NULL,
+    cloud_account_id UUID REFERENCES cloud_accounts (id) ON DELETE SET NULL,
+    deployment_target_type VARCHAR(50) DEFAULT 'GATEWAY',
+    revocation_reason VARCHAR(100),
+    revoked_at TIMESTAMPTZ,
     last_renewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -190,6 +195,25 @@ CREATE TABLE IF NOT EXISTS cloud_accounts (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- CA Integrations (Tenant-scoped encrypted Certificate Authority API credentials with AES-256-GCM)
+CREATE TABLE IF NOT EXISTS ca_integrations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    tenant_id UUID NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
+    provider VARCHAR(64) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    account_email VARCHAR(255),
+    external_account_binding_id VARCHAR(255),
+    encrypted_credentials TEXT NOT NULL,
+    encryption_iv VARCHAR(64) NOT NULL,
+    encryption_tag VARCHAR(64) NOT NULL,
+    masked_secret VARCHAR(64) NOT NULL,
+    is_default BOOLEAN NOT NULL DEFAULT false,
+    status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Audit Logs (Append-only compliance log)
 CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
@@ -224,6 +248,7 @@ DECLARE
     'deployment_records',
     'gateway_commands',
     'cloud_accounts',
+    'ca_integrations',
     'audit_logs'
   ];
 BEGIN

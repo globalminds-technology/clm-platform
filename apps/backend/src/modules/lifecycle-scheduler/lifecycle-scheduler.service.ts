@@ -33,7 +33,7 @@ export class LifecycleSchedulerService implements OnModuleInit, OnModuleDestroy 
     private readonly mailService: MailService,
     @Inject(forwardRef(() => CertificatesService))
     private readonly certificatesService: CertificatesService,
-  ) {}
+  ) { }
 
   onModuleInit() {
     this.logger.log(`Starting CLM Autonomous Lifecycle & Watchdog Engine (Interval: ${this.intervalMs / 1000}s)`);
@@ -90,7 +90,7 @@ export class LifecycleSchedulerService implements OnModuleInit, OnModuleDestroy 
         // Criteria: auto_renew = true, status != 'REVOKED', and expiring within renew_before_days (default 30 days)
         // =========================================================================
         const expiringCertsRes = await client.query(`
-          SELECT c.id, c.tenant_id, c.domain, c.renew_before_days, c.not_after, t.name as tenant_name
+          SELECT c.id, c.tenant_id, c.domain, c.renew_before_days, c.not_after, c.ca_integration_id, c.cloud_account_id, c.gateway_id, t.name as tenant_name
           FROM certificates c
           JOIN tenants t ON c.tenant_id = t.id
           WHERE c.auto_renew = true

@@ -12,7 +12,7 @@ import {
 } from '@clm/shared-types';
 
 export class CertificatesEndpoint {
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) { }
 
   probe(domain: string, port = 443): Promise<LiveTlsProbeResult> {
     return this.http.post<LiveTlsProbeResult>('certificates/probe', { domain, port });
@@ -46,8 +46,12 @@ export class CertificatesEndpoint {
     return this.http.post<Certificate>(`certificates/${id}/renew`, data);
   }
 
-  revoke(id: string, data: RevokeCertificateRequest): Promise<void> {
-    return this.http.post<void>(`certificates/${id}/revoke`, data);
+    revoke(id: string, data ?: RevokeCertificateRequest): Promise < Certificate > {
+      return this.http.post<Certificate>(`certificates/${id}/revoke`, data || { reason: 'UNSPECIFIED' });
+    }
+
+    deploy(id: string, gatewayId ?: string): Promise < { success: boolean; commandId: string; message?: string } > {
+      return this.http.post<{ success: boolean; commandId: string; message?: string }>(`certificates/${id}/deploy`, { gatewayId });
+    }
   }
-}
 

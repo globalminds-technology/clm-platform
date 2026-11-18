@@ -45,6 +45,21 @@ export class CreateCertificateDto implements CreateCertificateRequest {
   @IsOptional()
   gatewayId?: string;
 
+  @ApiPropertyOptional({ description: 'Certificate Authority Integration UUID' })
+  @IsString()
+  @IsOptional()
+  caIntegrationId?: string;
+
+  @ApiPropertyOptional({ description: 'Cloud Provider Account UUID for DNS-01 verification' })
+  @IsString()
+  @IsOptional()
+  cloudAccountId?: string;
+
+  @ApiPropertyOptional({ description: 'Deployment Target Type (e.g. GATEWAY, CLOUD_ALB, VAULT_ONLY)' })
+  @IsString()
+  @IsOptional()
+  deploymentTargetType?: string;
+
   @ApiPropertyOptional({ description: 'Certificate Authority Issuer name' })
   @IsString()
   @IsOptional()

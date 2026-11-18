@@ -12,7 +12,7 @@ import { type CreateCertificateDto } from './dto/create-certificate.dto';
 
 @Injectable()
 export class CertificatesRepository {
-  constructor(private readonly tenantContextService: TenantContextService) {}
+  constructor(private readonly tenantContextService: TenantContextService) { }
 
   async findAll(tenantId: string, filters?: CertificateFilterParams): Promise<Certificate[]> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
@@ -84,8 +84,8 @@ export class CertificatesRepository {
         `INSERT INTO certificates (
           tenant_id, domain, sans, status, key_algorithm, tracking_mode, issuer,
           serial_number, fingerprint_sha256, not_before, not_after,
-          auto_renew, renew_before_days, gateway_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          auto_renew, renew_before_days, gateway_id, ca_integration_id, cloud_account_id, deployment_target_type
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         RETURNING *;`,
         [
           tenantId,
@@ -102,6 +102,9 @@ export class CertificatesRepository {
           dto.autoRenew ?? true,
           dto.renewBeforeDays ?? 30,
           dto.gatewayId || null,
+          dto.caIntegrationId || null,
+          dto.cloudAccountId || null,
+          dto.deploymentTargetType || 'GATEWAY',
         ],
       );
 
@@ -250,10 +253,21 @@ export class CertificatesRepository {
     });
   }
 
-  async renew(tenantId: string, id: string): Promise<Certificate | null> {
+  async renew(
+    tenantId: string,
+    id: string,
+    issuedData ?: {
+      notBefore?: string;
+      notAfter?: string;
+      serialNumber?: string;
+      issuer?: string;
+      fingerprintSha256?: string;
+      caIntegrationId?: string;
+    },
+  ): Promise < Certificate | null > {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
       const check = await client.query(
-        'SELECT tracking_mode, domain FROM certificates WHERE id = $1;',
+        'SELECT tracking_mode, domain, ca_integration_id FROM certificates WHERE id = $1;',
         [id],
       );
 
@@ -263,15 +277,32 @@ export class CertificatesRepository {
         );
       }
 
-      const notBefore = new Date();
-      const notAfter = new Date(Date.now() + 90 * 86400000);
+      const notBefore = issuedData?.notBefore || new Date().toISOString();
+      const notAfter = issuedData?.notAfter || new Date(Date.now() + 90 * 86400000).toISOString();
 
       const res = await client.query(
         `UPDATE certificates
-         SET status = $1, not_before = $2, not_after = $3, last_renewed_at = NOW(), updated_at = NOW()
-         WHERE id = $4
+         SET status = $1,
+             not_before = $2,
+             not_after = $3,
+             serial_number = COALESCE($4, serial_number),
+             issuer = COALESCE($5, issuer),
+             fingerprint_sha256 = COALESCE($6, fingerprint_sha256),
+             ca_integration_id = COALESCE($7, ca_integration_id),
+             last_renewed_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $8
          RETURNING *;`,
-        [CertStatus.ACTIVE, notBefore.toISOString(), notAfter.toISOString(), id],
+        [
+          CertStatus.ACTIVE,
+          notBefore,
+          notAfter,
+          issuedData?.serialNumber || null,
+          issuedData?.issuer || null,
+          issuedData?.fingerprintSha256 || null,
+          issuedData?.caIntegrationId || null,
+          id,
+        ],
       );
 
       if (res.rows.length === 0) return null;
@@ -279,12 +310,30 @@ export class CertificatesRepository {
     });
   }
 
-  async delete(tenantId: string, id: string): Promise<boolean> {
-    return this.tenantContextService.withTenantContext(tenantId, async client => {
-      const res = await client.query('DELETE FROM certificates WHERE id = $1;', [id]);
-      return (res.rowCount ?? 0) > 0;
-    });
-  }
+  async revoke(tenantId: string, id: string, reason ?: string): Promise < Certificate | null > {
+      return this.tenantContextService.withTenantContext(tenantId, async client => {
+        const res = await client.query(
+          `UPDATE certificates
+         SET status = $1,
+             revocation_reason = $2,
+             revoked_at = NOW(),
+             auto_renew = false,
+             updated_at = NOW()
+         WHERE id = $3
+         RETURNING *;`,
+          [CertStatus.REVOKED, reason || 'UNSPECIFIED', id],
+        );
+        if (res.rows.length === 0) return null;
+        return this.mapRowToCertificate(res.rows[0]);
+      });
+    }
+
+  async delete (tenantId: string, id: string): Promise < boolean > {
+      return this.tenantContextService.withTenantContext(tenantId, async client => {
+        const res = await client.query('DELETE FROM certificates WHERE id = $1;', [id]);
+        return (res.rowCount ?? 0) > 0;
+      });
+    }
 
   private mapRowToCertificate(row: any): Certificate {
     const notAfter = new Date(row.not_after);
@@ -308,6 +357,11 @@ export class CertificatesRepository {
       autoRenew: row.auto_renew,
       renewBeforeDays: row.renew_before_days,
       gatewayId: row.gateway_id,
+      caIntegrationId: row.ca_integration_id,
+      cloudAccountId: row.cloud_account_id,
+      deploymentTargetType: row.deployment_target_type || 'GATEWAY',
+      revocationReason: row.revocation_reason || null,
+      revokedAt: row.revoked_at instanceof Date ? row.revoked_at.toISOString() : row.revoked_at || null,
       deployTargetCount: 1,
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
