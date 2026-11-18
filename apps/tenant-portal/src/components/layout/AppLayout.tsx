@@ -17,6 +17,7 @@ import {
   AlertCircle,
   Shield,
   LayoutDashboard,
+  Boxes,
 } from 'lucide-react';
 import { TenantStatus } from '@clm/shared-types';
 import { Sidebar, TopHeader, StatusBadge } from '@clm/ui';
@@ -28,6 +29,7 @@ export type AppTab =
   | 'discovery'
   | 'gateways'
   | 'compliance'
+  | 'integrations'
   | 'audit'
   | 'alerts'
   | 'settings';
@@ -104,6 +106,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       onClick: () => setActiveTab('compliance'),
     },
     {
+      id: 'integrations',
+      label: 'Integrations',
+      icon: <Boxes className="h-5 w-5" />,
+      active: activeTab === 'integrations',
+      onClick: () => setActiveTab('integrations'),
+    },
+    {
       id: 'audit',
       label: 'Audit Logs',
       icon: <Zap className="h-5 w-5" />,
@@ -155,6 +164,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 <LayoutDashboard className="h-5 w-5 text-blue-600" />
               ) : activeTab === 'compliance' ? (
                 <ShieldCheck className="h-5 w-5 text-blue-600" />
+              ) : activeTab === 'integrations' ? (
+                <Boxes className="h-5 w-5 text-blue-600" />
               ) : activeTab === 'gateways' ? (
                 <Server className="h-5 w-5 text-blue-600" />
               ) : activeTab === 'discovery' ? (
@@ -174,6 +185,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         ? 'Cryptographic Posture & Security'
         : activeTab === 'compliance'
         ? 'Policy Governance & Compliance Audits'
+        : activeTab === 'integrations'
+        ? 'Integrations & Certificate Authorities'
         : activeTab === 'gateways'
         ? 'Local Gateways'
         : activeTab === 'discovery'

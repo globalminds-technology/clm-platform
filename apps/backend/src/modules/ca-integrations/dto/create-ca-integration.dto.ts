@@ -28,6 +28,11 @@ export class CreateCaIntegrationDto implements CreateCaIntegrationRequest {
   @IsOptional()
   eabHmacKey?: string;
 
+  @ApiPropertyOptional({ example: 'https://acme.zerossl.com/v2/DV90' })
+  @IsString()
+  @IsOptional()
+  acmeDirectoryUrl?: string;
+
   @ApiPropertyOptional({ example: 'X-DC-DEVKEY-89417284910248' })
   @IsString()
   @IsOptional()
@@ -53,6 +58,16 @@ export class CreateCaIntegrationDto implements CreateCaIntegrationRequest {
   @IsOptional()
   sectigoCustomerUri?: string;
 
+  @ApiPropertyOptional({ example: 'api_key_or_client_id' })
+  @IsString()
+  @IsOptional()
+  apiKey?: string;
+
+  @ApiPropertyOptional({ example: 'api_secret_key' })
+  @IsString()
+  @IsOptional()
+  apiSecret?: string;
+
   @ApiPropertyOptional({ example: 'arn:aws:acm-pca:us-east-1:123456789012:certificate-authority/12345678-1234-1234-1234-123456789012' })
   @IsString()
   @IsOptional()
@@ -63,6 +78,26 @@ export class CreateCaIntegrationDto implements CreateCaIntegrationRequest {
   @IsOptional()
   awsCloudAccountId?: string;
 
+  @ApiPropertyOptional({ example: 'https://vault.azure.net' })
+  @IsString()
+  @IsOptional()
+  azureVaultUri?: string;
+
+  @ApiPropertyOptional({ example: 'azure-tenant-id-uuid' })
+  @IsString()
+  @IsOptional()
+  azureTenantId?: string;
+
+  @ApiPropertyOptional({ example: 'azure-client-id-uuid' })
+  @IsString()
+  @IsOptional()
+  azureClientId?: string;
+
+  @ApiPropertyOptional({ example: 'azure-client-secret-val' })
+  @IsString()
+  @IsOptional()
+  azureClientSecret?: string;
+
   @ApiPropertyOptional({ example: 'https://vault.internal:8200' })
   @IsString()
   @IsOptional()
@@ -72,6 +107,26 @@ export class CreateCaIntegrationDto implements CreateCaIntegrationRequest {
   @IsString()
   @IsOptional()
   vaultToken?: string;
+
+  @ApiPropertyOptional({ example: 'https://ca.corp.internal/certsrv' })
+  @IsString()
+  @IsOptional()
+  mscaServerUrl?: string;
+
+  @ApiPropertyOptional({ example: 'WebServerEnterpriseTemplate' })
+  @IsString()
+  @IsOptional()
+  mscaTemplateName?: string;
+
+  @ApiPropertyOptional({ example: 'https://k8s.internal:6443' })
+  @IsString()
+  @IsOptional()
+  k8sClusterUrl?: string;
+
+  @ApiPropertyOptional({ example: 'cert-manager' })
+  @IsString()
+  @IsOptional()
+  k8sNamespace?: string;
 
   @ApiPropertyOptional({ example: true, default: false })
   @IsBoolean()

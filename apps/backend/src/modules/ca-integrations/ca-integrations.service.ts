@@ -18,7 +18,7 @@ export class CaIntegrationsService {
     private readonly repository: CaIntegrationsRepository,
     private readonly cryptoService: CryptoService,
     private readonly auditLogsService: AuditLogsService,
-  ) {}
+  ) { }
 
   async create(tenantId: string, dto: CreateCaIntegrationDto, actorId = 'system'): Promise<CaIntegration> {
     let credentialsPayload: any = {};
@@ -63,20 +63,57 @@ export class CaIntegrationsService {
         token: dto.vaultToken,
       };
       maskedSecret = `Vault: ${dto.vaultAddress.replace(/^https?:\/\//, '')}`;
-    } else if (dto.provider === CaProvider.LETS_ENCRYPT) {
+    } else if (dto.provider === CaProvider.GLOBALSIGN || dto.provider === CaProvider.GODADDY || dto.provider === CaProvider.THE_SSL_STORE || dto.provider === CaProvider.EMSIGN) {
+      const key = dto.apiKey || dto.digicertApiKey || 'APIKEY';
+      credentialsPayload = {
+        apiKey: key,
+        apiSecret: dto.apiSecret || '',
+      };
+      maskedSecret = `${dto.provider}: ••••${key.slice(-4)}`;
+    } else if (dto.provider === CaProvider.AZURE_KEYVAULT) {
+      credentialsPayload = {
+        vaultUri: dto.azureVaultUri || '',
+        tenantId: dto.azureTenantId || '',
+        clientId: dto.azureClientId || '',
+        clientSecret: dto.azureClientSecret || '',
+      };
+      maskedSecret = `Azure KV: ${dto.azureVaultUri ? dto.azureVaultUri.replace(/^https?:\/\//, '') : 'Vault'}`;
+    } else if (dto.provider === CaProvider.MSCA) {
+      credentialsPayload = {
+        serverUrl: dto.mscaServerUrl || '',
+        templateName: dto.mscaTemplateName || '',
+        username: dto.sectigoUsername || '',
+        password: dto.sectigoPassword || '',
+      };
+      maskedSecret = `MSCA: ${dto.mscaTemplateName || 'AD CS'}`;
+    } else if (dto.provider === CaProvider.KUBERNETES) {
+      credentialsPayload = {
+        clusterUrl: dto.k8sClusterUrl || '',
+        namespace: dto.k8sNamespace || 'cert-manager',
+      };
+      maskedSecret = `K8s: ${dto.k8sNamespace || 'cert-manager'}`;
+    } else if (
+      dto.provider === CaProvider.LETS_ENCRYPT ||
+      dto.provider === CaProvider.ZEROSSL ||
+      dto.provider === CaProvider.BUYPASS ||
+      dto.provider === CaProvider.TELIA ||
+      dto.provider === CaProvider.CUSTOM_ACME
+    ) {
       if (dto.externalAccountBindingId && dto.eabHmacKey) {
         credentialsPayload = {
           eabKeyId: dto.externalAccountBindingId,
           eabHmacKey: dto.eabHmacKey,
           accountEmail: dto.accountEmail || '',
+          directoryUrl: dto.acmeDirectoryUrl || '',
         };
-        maskedSecret = `EAB: ${dto.externalAccountBindingId.slice(0, 4)}••••`;
+        maskedSecret = `${dto.provider} (EAB: ${dto.externalAccountBindingId.slice(0, 4)}••••)`;
       } else {
         credentialsPayload = {
           accountEmail: dto.accountEmail || '',
+          directoryUrl: dto.acmeDirectoryUrl || '',
           mode: 'ACME_AUTOMATED',
         };
-        maskedSecret = 'Auto (Zero-Config ACME)';
+        maskedSecret = `${dto.provider} (RFC 8555)`;
       }
     }
 

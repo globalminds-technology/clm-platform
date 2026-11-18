@@ -8,6 +8,7 @@ import { CertificatesView, useCertificates } from './features/certificates';
 import { DiscoveryView } from './features/discovery';
 import { GatewaysView, useGateways } from './features/gateways';
 import { ComplianceView } from './features/compliance';
+import { IntegrationsCatalogView } from './features/integrations';
 import { SettingsView, useSettings } from './features/settings';
 import { AuditLogTable } from './features/audit';
 import { AlertsView } from './features/alerts';
@@ -151,6 +152,14 @@ function AuthenticatedApp() {
       )}
 
       {activeTab === 'compliance' && <ComplianceView certs={certsHook.certs} />}
+
+      {activeTab === 'integrations' && (
+        <IntegrationsCatalogView
+          caIntegrations={settingsHook.caIntegrations}
+          cloudAccounts={settingsHook.cloudAccounts}
+          onIntegrationsUpdated={settingsHook.fetchCaIntegrations}
+        />
+      )}
 
       {activeTab === 'audit' && <AuditLogTable logs={activityLogs} />}
 
