@@ -158,6 +158,13 @@ export class CaIntegrationsService {
     return this.repository.findAll(tenantId);
   }
 
+  async findDefault(tenantId: string): Promise<CaIntegration | null> {
+    const item = await this.repository.findDefault(tenantId);
+    if (!item) return null;
+    const { encryptedCredentials, encryptionIv, encryptionTag, ...sanitized } = item;
+    return sanitized;
+  }
+
   async findById(tenantId: string, id: string): Promise<CaIntegration> {
     const item = await this.repository.findById(tenantId, id);
     if (!item) {

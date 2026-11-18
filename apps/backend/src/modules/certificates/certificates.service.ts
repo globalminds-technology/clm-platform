@@ -174,7 +174,7 @@ export class CertificatesService {
     const tier = tenant?.tier || 'COMMUNITY';
     const isPaidPlan = tier !== 'COMMUNITY';
 
-    const effectiveCaIntegrationId = request?.caIntegrationId || cert.caIntegrationId;
+    let effectiveCaIntegrationId = request?.caIntegrationId || cert.caIntegrationId;
     const effectiveCloudAccountId = request?.cloudAccountId || cert.cloudAccountId;
 
     let targetProvider = request?.caProvider;
@@ -186,6 +186,17 @@ export class CertificatesService {
         }
       } catch {
         // Fallback if CA integration was removed
+      }
+    } else {
+      // Automatically fallback to tenant's configured Default CA if none assigned to certificate
+      try {
+        const defaultCa = await this.caIntegrationsService.findDefault(tenantId);
+        if (defaultCa) {
+          effectiveCaIntegrationId = defaultCa.id;
+          targetProvider = defaultCa.provider as any;
+        }
+      } catch {
+        // Fallback to standard ACME
       }
     }
 
@@ -324,12 +335,12 @@ export class CertificatesService {
     };
   }
 
-  async revoke(tenantId: string, id: string, dto ?: RevokeCertificateRequest): Promise < Certificate > {
-      const existing = await this.findById(tenantId, id);
-      const updated = await this.certificatesRepository.revoke(tenantId, id, dto?.reason);
-      if(!updated) {
-        throw new NotFoundException(`Certificate with ID '${id}' not found`);
-      }
+  async revoke(tenantId: string, id: string, dto?: RevokeCertificateRequest): Promise<Certificate> {
+    const existing = await this.findById(tenantId, id);
+    const updated = await this.certificatesRepository.revoke(tenantId, id, dto?.reason);
+    if (!updated) {
+      throw new NotFoundException(`Certificate with ID '${id}' not found`);
+    }
 
     await this.auditLogsService.log(tenantId, {
       actorType: AuditActorType.USER,
