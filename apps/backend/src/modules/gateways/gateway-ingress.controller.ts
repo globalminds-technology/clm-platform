@@ -1,5 +1,7 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Header, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import * as fs from 'fs';
+import * as path from 'path';
 import { GatewaysService } from './gateways.service';
 import { Public } from '../../shared/auth/public.decorator';
 import { GatewayHeartbeatDto } from './dto/gateway-heartbeat.dto';
@@ -64,6 +66,18 @@ export class GatewayIngressController {
   @ApiResponse({ status: 200, description: 'Acknowledgment registered' })
   async commandAck(@Body() dto: GatewayCommandAckDto) {
     return this.gatewaysService.acknowledgeCommand(dto);
+  }
+
+  @Public()
+  @Get('install.sh')
+  @Header('Content-Type', 'text/x-shellscript')
+  @ApiOperation({ summary: 'Download automated bootstrap installer script' })
+  getInstallerScript(): string {
+    const scriptPath = path.resolve(__dirname, '../../../../gateway/scripts/install.sh');
+    if (fs.existsSync(scriptPath)) {
+      return fs.readFileSync(scriptPath, 'utf8');
+    }
+    return `#!/usr/bin/env bash\necho "[ERROR] Installer script not found on host."\nexit 1;\n`;
   }
 }
 

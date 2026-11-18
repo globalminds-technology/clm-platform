@@ -188,7 +188,7 @@ export function App() {
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
   const [enrollToken, setEnrollToken] = useState<string>('');
-  const [enrollTab, setEnrollTab] = useState<'quick' | 'bash' | 'runner'>('quick');
+  const [enrollTab, setEnrollTab] = useState<'cloudformation' | 'userdata' | 'docker' | 'quick'>('cloudformation');
   const [isSimulatingHandshake, setIsSimulatingHandshake] = useState(false);
 
   // Cloud Provider Accounts (Step 2 in Architecture Spec - AES-256-GCM)
@@ -1836,7 +1836,6 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
           <footer className="border-t border-slate-200/80 py-6 px-6 text-center text-xs text-slate-500 relative z-10 bg-white/70 backdrop-blur-sm">
             <div className="max-w-6xl mx-auto flex items-center justify-between">
               <span>&copy; 2026 CLM Platform Inc.</span>
-              <span className="text-[11px] text-emerald-600 font-semibold">PostgreSQL RLS Protected</span>
             </div>
           </footer>
         </div>
@@ -1847,7 +1846,7 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
     // Comprehensive Home Page: Pure Application Overview (8 Detailed Sections)
     // -----------------------------------------------------------------------
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans selection:bg-blue-500/20 selection:text-blue-600 flex flex-col relative overflow-x-hidden">
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans selection:bg-blue-500/20 selection:text-blue-600 flex flex-col relative pt-[73px]">
         <Toaster position="top-right" />
 
         {/* Full-Page Clean Light Square Grid (No Cursor Effect) */}
@@ -1869,8 +1868,8 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
           />
         </div>
 
-        {/* Top Navigation Bar */}
-        <header className="sticky top-0 z-50 backdrop-blur-xl bg-white/85 border-b border-slate-200/80 px-6 py-4 shadow-sm">
+        {/* Top Navigation Bar - Constant Fixed Header */}
+        <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-white/95 border-b border-slate-200/80 px-6 py-4 shadow-sm">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/25">
@@ -1878,9 +1877,6 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
               </div>
               <div>
                 <span className="font-black text-lg tracking-tight text-slate-900">CLM Platform</span>
-                <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-50 text-blue-700 border border-blue-200">
-                  Zero-Trust PKI
-                </span>
               </div>
             </div>
 
@@ -1896,13 +1892,6 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
 
             <div className="flex items-center gap-3">
               <button
-                onClick={handleLoadDemoSandbox}
-                className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 text-xs font-bold transition-all shadow-sm"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-                <span>Demo Sandbox</span>
-              </button>
-              <button
                 onClick={() => {
                   setAuthMode('signin');
                   setPublicView('auth');
@@ -1910,15 +1899,6 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
                 className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 shadow-sm transition-all"
               >
                 Sign In
-              </button>
-              <button
-                onClick={() => {
-                  setAuthMode('signup');
-                  setPublicView('auth');
-                }}
-                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-xl text-xs font-bold text-white shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02]"
-              >
-                Deploy Free
               </button>
             </div>
           </div>
@@ -1966,29 +1946,12 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
             <div className="pt-2 flex flex-wrap items-center justify-center gap-3.5">
               <button
                 onClick={() => {
-                  setAuthMode('signup');
-                  setPublicView('auth');
-                }}
-                className="bg-blue-600 hover:bg-blue-700 px-6 py-3.5 rounded-2xl text-xs font-black text-white shadow-xl shadow-blue-500/25 flex items-center gap-2 hover:scale-[1.02] transition-all"
-              >
-                <span>Deploy Free Tenant Workspace</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => {
                   setAuthMode('signin');
                   setPublicView('auth');
                 }}
-                className="px-5 py-3.5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 shadow-sm transition-all"
+                className="px-6 py-3.5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 shadow-sm transition-all"
               >
                 Sign In to Workspace
-              </button>
-              <button
-                onClick={handleLoadDemoSandbox}
-                className="px-4 py-3.5 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-bold text-amber-800 transition-all flex items-center gap-1.5 shadow-sm"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-                <span>Launch Demo Sandbox</span>
               </button>
             </div>
 
@@ -2410,51 +2373,12 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
           </div>
         </section>
 
-        {/* =================================================================== */}
-        {/* SECTION 8: Conversion CTA Banner & Enterprise Footer                */}
-        {/* =================================================================== */}
-        <section className="relative z-10 py-16 px-6 max-w-7xl mx-auto w-full">
-          <div className="p-10 sm:p-14 rounded-[36px] bg-gradient-to-r from-blue-50 via-indigo-50 to-cyan-50 border border-blue-200 text-center space-y-6 shadow-sm relative overflow-hidden">
-            <div className="max-w-2xl mx-auto space-y-3">
-              <h2 className="text-3xl sm:text-4xl font-black text-slate-900">
-                Eliminate TLS Expiration Outages Forever.
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-600">
-                Deploy your organization in 60 seconds. Provision VPC gateways, automate ACME issuance, and enjoy zero-downtime certificate lifecycles.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
-              <button
-                onClick={() => {
-                  setAuthMode('signup');
-                  setPublicView('auth');
-                }}
-                className="bg-blue-600 hover:bg-blue-700 px-6 py-3.5 rounded-2xl text-xs font-extrabold text-white shadow-xl shadow-blue-500/25 flex items-center gap-2 hover:scale-[1.02] transition-all"
-              >
-                <span>Deploy Free Workspace</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-              <button
-                onClick={handleLoadDemoSandbox}
-                className="px-5 py-3.5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-bold text-slate-800 shadow-sm transition-all"
-              >
-                Launch Demo Sandbox
-              </button>
-            </div>
-          </div>
-        </section>
-
         {/* Public Footer */}
         <footer className="relative z-10 mt-auto border-t border-slate-200/80 py-8 px-6 text-center text-xs text-slate-500 bg-white/70 backdrop-blur-sm">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-blue-600" />
               <span>&copy; 2026 CLM Platform Inc. All rights reserved.</span>
-            </div>
-            <div className="flex items-center gap-2 text-[11px] text-emerald-600 font-semibold">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>All Systems Operational &bull; PostgreSQL RLS Enforced</span>
             </div>
           </div>
         </footer>
@@ -4257,32 +4181,130 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
             <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#F8FAFC] border border-slate-100">
               <button
                 type="button"
+                onClick={() => setEnrollTab('cloudformation')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  enrollTab === 'cloudformation' ? 'pill-tab-active' : 'pill-tab-inactive'
+                }`}
+              >
+                ☁️ 1-Click AWS Stack
+              </button>
+              <button
+                type="button"
+                onClick={() => setEnrollTab('userdata')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  enrollTab === 'userdata' ? 'pill-tab-active' : 'pill-tab-inactive'
+                }`}
+              >
+                ⚡ 1-Line EC2 User Data
+              </button>
+              <button
+                type="button"
+                onClick={() => setEnrollTab('docker')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  enrollTab === 'docker' ? 'pill-tab-active' : 'pill-tab-inactive'
+                }`}
+              >
+                🐳 Docker / ECS
+              </button>
+              <button
+                type="button"
                 onClick={() => setEnrollTab('quick')}
                 className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
                   enrollTab === 'quick' ? 'pill-tab-active' : 'pill-tab-inactive'
                 }`}
               >
-                ⚡ 1-Click Instant Handshake
-              </button>
-              <button
-                type="button"
-                onClick={() => setEnrollTab('bash')}
-                className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  enrollTab === 'bash' ? 'pill-tab-active' : 'pill-tab-inactive'
-                }`}
-              >
-                💻 Customer Linux / VPC Command
-              </button>
-              <button
-                type="button"
-                onClick={() => setEnrollTab('runner')}
-                className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  enrollTab === 'runner' ? 'pill-tab-active' : 'pill-tab-inactive'
-                }`}
-              >
-                🌐 Local Daemon + Web UI
+                🔬 Instant Simulation
               </button>
             </div>
+
+            {enrollTab === 'cloudformation' && (
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Cloud className="h-4 w-4 text-amber-600" />
+                    <h4 className="text-xs font-bold text-slate-800">1-Click AWS CloudFormation Deployment</h4>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700">Recommended for DevOps</span>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Launch the Satellite Gateway directly into your private AWS VPC. Creates the zero-trust EC2 instance, attached IAM instance profile (for AWS ACM &amp; ALB bindings), and outbound-only security group.
+                </p>
+                <div className="p-3 bg-white/90 rounded-xl border border-slate-200/80 font-mono text-[11px] text-slate-700 space-y-1">
+                  <div><strong>Target AWS Region:</strong> us-east-1</div>
+                  <div><strong>Outbound Firewall:</strong> Zero Open Inbound Ports (Outbound HTTPS only)</div>
+                  <div><strong>Bootstrap Token:</strong> {enrollToken ? `${enrollToken.slice(0, 16)}...` : 'Generating...'}</div>
+                </div>
+                <a
+                  href={`https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?param_EnrollmentToken=${encodeURIComponent(enrollToken || '')}&param_ControlPlaneUrl=http://localhost:4000/api/v1`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-md shadow-amber-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  <span>Launch CloudFormation Stack in AWS Console</span>
+                </a>
+              </div>
+            )}
+
+            {enrollTab === 'userdata' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-slate-600">
+                    Paste this 1-line script into your EC2 <strong>User Data</strong> (under Advanced Details) when launching any Linux instance:
+                  </p>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">Zero Terminal Interaction</span>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-slate-900 text-slate-100 font-mono text-[11px] relative flex items-center justify-between">
+                  <span className="truncate pr-4">
+                    curl -sSL http://localhost:4000/api/v1/ingress/gateway/install.sh | sudo bash -s -- --token {enrollToken || 'TOKEN'} --control-plane http://localhost:4000/api/v1
+                  </span>
+                  <button
+                    onClick={() =>
+                      copyToClipboard(
+                        `curl -sSL http://localhost:4000/api/v1/ingress/gateway/install.sh | sudo bash -s -- --token ${enrollToken} --control-plane http://localhost:4000/api/v1`,
+                      )
+                    }
+                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-sans text-xs font-bold flex items-center gap-1 shrink-0 transition-colors"
+                  >
+                    {copiedToken ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    <span>{copiedToken ? 'Copied' : 'Copy Command'}</span>
+                  </button>
+                </div>
+                <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl space-y-1.5 text-[11px] text-slate-600">
+                  <div className="font-bold text-slate-800">What this script does automatically:</div>
+                  <ul className="list-disc pl-4 space-y-0.5 text-[10px]">
+                    <li>Installs Node/Go runtime if missing.</li>
+                    <li>Configures systemd daemon (<code>/etc/systemd/system/clm-gateway.service</code>).</li>
+                    <li>Enables automatic restart on server reboot.</li>
+                    <li>Initiates outbound beacons and registers with the portal.</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {enrollTab === 'docker' && (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-600">
+                  Run inside any Docker host, AWS ECS Task, or Kubernetes pod within your private network:
+                </p>
+                <div className="p-3.5 rounded-2xl bg-slate-900 text-slate-100 font-mono text-[11px] relative flex items-center justify-between">
+                  <span className="truncate pr-4">
+                    docker run -d --restart=always --name clm-satellite-gateway -e CLM_CONTROL_PLANE_URL="http://localhost:4000/api/v1" -e CLM_ENROLLMENT_TOKEN="{enrollToken}" clmplatform/satellite-gateway:latest
+                  </span>
+                  <button
+                    onClick={() =>
+                      copyToClipboard(
+                        `docker run -d --restart=always --name clm-satellite-gateway -e CLM_CONTROL_PLANE_URL="http://localhost:4000/api/v1" -e CLM_ENROLLMENT_TOKEN="${enrollToken}" clmplatform/satellite-gateway:latest`,
+                      )
+                    }
+                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-sans text-xs font-bold flex items-center gap-1 shrink-0 transition-colors"
+                  >
+                    {copiedToken ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    <span>{copiedToken ? 'Copied' : 'Copy Command'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {enrollTab === 'quick' && (
               <div className="p-5 rounded-2xl bg-blue-50/60 border border-blue-200/80 space-y-3">
@@ -4316,70 +4338,6 @@ ZGlhdGUgQ0EwHhcNMjIwMTAxMDAwMDAwWhcNMzIwMTAxMDAwMDAwWjA4MQswCQYD
                     </>
                   )}
                 </button>
-              </div>
-            )}
-
-            {enrollTab === 'bash' && (
-              <div className="space-y-3">
-                <p className="text-xs text-slate-600">
-                  Execute inside your customer VPC, Kubernetes cluster, or Linux server. Notice that both the <strong>--token</strong> and <strong>--server</strong> flags are supplied:
-                </p>
-                <div className="p-3.5 rounded-2xl bg-slate-900 text-slate-100 font-mono text-[11px] relative flex items-center justify-between">
-                  <span className="truncate pr-4">
-                    curl -sSL http://localhost:4000/api/v1/install.sh | bash -s -- --token {enrollToken || 'TOKEN'} --server http://localhost:4000/api/v1
-                  </span>
-                  <button
-                    onClick={() =>
-                      copyToClipboard(
-                        `curl -sSL http://localhost:4000/api/v1/install.sh | bash -s -- --token ${enrollToken} --server http://localhost:4000/api/v1`,
-                      )
-                    }
-                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-sans text-xs font-bold flex items-center gap-1 shrink-0 transition-colors"
-                  >
-                    {copiedToken ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    <span>{copiedToken ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-                <div className="text-[11px] text-slate-500">
-                  Direct REST API curl command:
-                  <pre className="mt-1 p-2.5 rounded-xl bg-slate-100 text-slate-800 text-[10px] overflow-x-auto">
-{`curl -X POST http://localhost:4000/api/v1/ingress/gateway/enroll \\
-  -H "Content-Type: application/json" \\
-  -d '{"token":"${enrollToken}","hostname":"gw-prod-01.acme.internal","ipAddress":"10.0.1.15","version":"1.0.0"}'`}
-                  </pre>
-                </div>
-              </div>
-            )}
-
-            {enrollTab === 'runner' && (
-              <div className="space-y-3">
-                <p className="text-xs text-slate-600">
-                  Launch the built-in Satellite Daemon in this repository. It executes outbound beacons every 30s and launches the <strong>Local Web UI console</strong> at <code>http://localhost:8080</code>:
-                </p>
-                <div className="p-3.5 rounded-2xl bg-slate-900 text-slate-100 font-mono text-[11px] relative flex items-center justify-between">
-                  <span className="truncate pr-4">
-                    CLM_ENROLLMENT_TOKEN="{enrollToken}" pnpm --filter @clm/gateway start
-                  </span>
-                  <button
-                    onClick={() => copyToClipboard(`CLM_ENROLLMENT_TOKEN="${enrollToken}" pnpm --filter @clm/gateway start`)}
-                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-sans text-xs font-bold flex items-center gap-1 shrink-0 transition-colors"
-                  >
-                    {copiedToken ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    <span>{copiedToken ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
-                  <span>Local Gateway Web UI console will be available at:</span>
-                  <a
-                    href="http://localhost:8080"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-bold text-blue-600 underline inline-flex items-center gap-1"
-                  >
-                    <span>http://localhost:8080</span>
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
               </div>
             )}
 
