@@ -23,7 +23,7 @@ import { CryptoModule } from '../crypto/crypto.module';
           'clm-super-secure-jwt-secret-key-change-in-production-32bytes!',
         ),
         signOptions: {
-          expiresIn: '15m',
+          expiresIn: (configService.get<string>('JWT_EXPIRES_IN') || '7d') as any,
         },
       }),
     }),
