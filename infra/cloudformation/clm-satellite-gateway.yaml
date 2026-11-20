@@ -100,7 +100,6 @@ Resources:
           #!/bin/bash
           set -e
           echo "Bootstrapping CLM Satellite Gateway..."
-          dnf install -y nodejs curl
           curl -sSL "${ControlPlaneUrl}/ingress/gateway/install.sh" | bash -s -- --token "${EnrollmentToken}" --control-plane "${ControlPlaneUrl}"
 
 Outputs:
