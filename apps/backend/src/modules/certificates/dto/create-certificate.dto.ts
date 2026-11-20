@@ -84,5 +84,10 @@ export class CreateCertificateDto implements CreateCertificateRequest {
   @IsString()
   @IsOptional()
   fingerprintSha256?: string;
+
+  @ApiPropertyOptional({ description: 'Full X.509 PEM certificate text' })
+  @IsString()
+  @IsOptional()
+  certificatePem?: string;
 }
 

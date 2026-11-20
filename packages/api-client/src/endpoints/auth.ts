@@ -44,6 +44,10 @@ export class AuthEndpoint {
   getMe(): Promise<User> {
     return this.http.get<User>('auth/me');
   }
+
+  me(): Promise<{ user: User; tenant: any }> {
+    return this.http.get<{ user: User; tenant: any }>('auth/me');
+  }
 }
 
 

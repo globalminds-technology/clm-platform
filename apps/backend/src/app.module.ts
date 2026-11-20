@@ -5,6 +5,7 @@ import { DatabaseModule } from './shared/database/database.module';
 import { TenancyModule } from './shared/tenancy/tenancy.module';
 import { CryptoModule } from './shared/crypto/crypto.module';
 import { MailModule } from './shared/mail/mail.module';
+import { StorageModule } from './shared/storage/storage.module';
 import { AuthModule } from './shared/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
@@ -26,6 +27,7 @@ import { LifecycleSchedulerModule } from './modules/lifecycle-scheduler/lifecycl
     TenancyModule,
     CryptoModule,
     MailModule,
+    StorageModule,
     AuthModule,
     HealthModule,
     UsersModule,

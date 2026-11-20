@@ -25,6 +25,7 @@ export interface Certificate {
   revokedAt?: string | null;
   deployTargetCount: number;
   lastRenewedAt?: string | null;
+  certificatePem?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -73,6 +74,7 @@ export interface CreateCertificateRequest {
   notAfter?: string;
   serialNumber?: string;
   fingerprintSha256?: string;
+  certificatePem?: string;
 }
 
 export interface ReprobeCertificateResponse {

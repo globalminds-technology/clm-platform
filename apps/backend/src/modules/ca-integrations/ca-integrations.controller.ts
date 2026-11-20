@@ -25,10 +25,10 @@ import { Role } from '@clm/shared-types';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('ca-integrations')
 export class CaIntegrationsController {
-  constructor(private readonly service: CaIntegrationsService) {}
+  constructor(private readonly service: CaIntegrationsService) { }
 
   @Post()
-  @Roles(Role.TENANT_ADMIN, Role.SECURITY_LEAD)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register Certificate Authority API credentials (AES-256-GCM encrypted)' })
   @ApiResponse({ status: 201, description: 'CA integration created and credentials encrypted' })
@@ -72,7 +72,7 @@ export class CaIntegrationsController {
   }
 
   @Delete(':id')
-  @Roles(Role.TENANT_ADMIN, Role.SECURITY_LEAD)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN)
   @ApiOperation({ summary: 'Remove a CA integration' })
   @ApiResponse({ status: 200, description: 'CA integration deleted' })
   async delete(

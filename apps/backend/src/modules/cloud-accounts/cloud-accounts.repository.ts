@@ -15,7 +15,7 @@ export interface CloudAccountRecordWithCipher extends CloudAccount {
 
 @Injectable()
 export class CloudAccountsRepository {
-  constructor(private readonly tenantContextService: TenantContextService) {}
+  constructor(private readonly tenantContextService: TenantContextService) { }
 
   async create(
     tenantId: string,
@@ -68,7 +68,8 @@ export class CloudAccountsRepository {
   async findAll(tenantId: string): Promise<CloudAccount[]> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
       const res = await client.query(
-        'SELECT * FROM cloud_accounts ORDER BY created_at DESC;',
+        'SELECT * FROM cloud_accounts WHERE tenant_id = $1 ORDER BY created_at DESC;',
+        [tenantId],
       );
       return res.rows.map(r => this.mapRowToCloudAccount(r));
     });
@@ -77,8 +78,8 @@ export class CloudAccountsRepository {
   async findById(tenantId: string, id: string): Promise<CloudAccountRecordWithCipher | null> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
       const res = await client.query(
-        'SELECT * FROM cloud_accounts WHERE id = $1;',
-        [id],
+        'SELECT * FROM cloud_accounts WHERE id = $1 AND tenant_id = $2;',
+        [id, tenantId],
       );
       if (res.rows.length === 0) return null;
       return this.mapRowToCloudAccountWithCipher(res.rows[0]);
@@ -95,9 +96,9 @@ export class CloudAccountsRepository {
       const res = await client.query(
         `UPDATE cloud_accounts
          SET status = $1, error_message = $2, last_sync_at = NOW(), updated_at = NOW()
-         WHERE id = $3
+         WHERE id = $3 AND tenant_id = $4
          RETURNING *;`,
-        [status, errorMessage || null, id],
+        [status, errorMessage || null, id, tenantId],
       );
       if (res.rows.length === 0) throw new Error('Cloud account not found');
       return this.mapRowToCloudAccount(res.rows[0]);
@@ -107,8 +108,8 @@ export class CloudAccountsRepository {
   async delete(tenantId: string, id: string): Promise<boolean> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
       const res = await client.query(
-        'DELETE FROM cloud_accounts WHERE id = $1;',
-        [id],
+        'DELETE FROM cloud_accounts WHERE id = $1 AND tenant_id = $2;',
+        [id, tenantId],
       );
       return (res.rowCount ?? 0) > 0;
     });
@@ -145,4 +146,3 @@ export class CloudAccountsRepository {
     };
   }
 }
-

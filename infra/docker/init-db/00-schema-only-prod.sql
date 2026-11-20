@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS certificates (
     revocation_reason VARCHAR(100),
     revoked_at TIMESTAMPTZ,
     last_renewed_at TIMESTAMPTZ,
+    certificate_pem TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

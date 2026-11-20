@@ -32,6 +32,7 @@ export interface InviteMemberRequest {
   firstName: string;
   lastName: string;
   role: Role;
+  password?: string;
 }
 
 export interface UpdateMemberRoleRequest {
@@ -51,6 +52,7 @@ export interface MemberListItem extends User {
 export interface AuthSession {
   user: User;
   tenantId: string;
+  tenant?: any;
   token?: string;
   expiresAt?: string;
   tokens?: {

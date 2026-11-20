@@ -18,6 +18,10 @@ export class CertificatesEndpoint {
     return this.http.post<LiveTlsProbeResult>('certificates/probe', { domain, port });
   }
 
+  getCtLogs(domain: string): Promise<any[]> {
+    return this.http.get<any[]>('certificates/ct-logs', { domain });
+  }
+
   reprobe(id: string): Promise<ReprobeCertificateResponse> {
     return this.http.post<ReprobeCertificateResponse>(`certificates/${id}/reprobe`, {});
   }
@@ -50,8 +54,15 @@ export class CertificatesEndpoint {
     return this.http.post<Certificate>(`certificates/${id}/revoke`, data || { reason: 'UNSPECIFIED' });
   }
 
-    deploy(id: string, gatewayId ?: string): Promise < { success: boolean; commandId: string; message?: string } > {
-      return this.http.post<{ success: boolean; commandId: string; message?: string }>(`certificates/${id}/deploy`, { gatewayId });
+    deploy(id: string, gatewayId ?: string, targetType ?: string): Promise < { success: boolean; commandId: string; message?: string } > {
+      return this.http.post<{ success: boolean; commandId: string; message?: string }>(`certificates/${id}/deploy`, { gatewayId, targetType });
+    }
+
+    updateBinding(
+      id: string,
+      data: { caIntegrationId?: string | null; gatewayId?: string | null; autoRenew?: boolean; renewBeforeDays?: number },
+    ): Promise < Certificate > {
+      return this.http.patch<Certificate>(`certificates/${id}/binding`, data);
     }
 
     delete (id: string): Promise < void> {

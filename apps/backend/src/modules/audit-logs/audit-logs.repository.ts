@@ -36,9 +36,10 @@ export class AuditLogsRepository {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
       const res = await client.query(
         `SELECT * FROM audit_logs
+         WHERE tenant_id = $1
          ORDER BY created_at DESC
-         LIMIT $1 OFFSET $2;`,
-        [limit, offset],
+        LIMIT $2 OFFSET $3; `,
+        [tenantId, limit, offset],
       );
       return res.rows.map(r => this.mapRowToAuditLog(r));
     });
@@ -49,7 +50,7 @@ export class AuditLogsRepository {
       const res = await client.query(
         `SELECT * FROM audit_logs
          ORDER BY created_at DESC
-         LIMIT $1 OFFSET $2;`,
+         LIMIT $1 OFFSET $2; `,
         [limit, offset],
       );
       return res.rows.map(r => this.mapRowToAuditLog(r));

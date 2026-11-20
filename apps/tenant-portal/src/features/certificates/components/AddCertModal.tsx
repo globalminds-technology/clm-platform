@@ -10,6 +10,11 @@ import {
   Lock,
   CheckCircle2,
   Terminal,
+  Globe,
+  Copy,
+  Check,
+  Mail,
+  Cloud,
 } from 'lucide-react';
 import {
   KeyAlgorithm,
@@ -42,7 +47,7 @@ export const AddCertModal: React.FC<AddCertModalProps> = ({
   gateways,
   currentTenant,
   caIntegrations = [],
-  cloudAccounts: _cloudAccounts = [],
+  cloudAccounts = [],
 }) => {
   const [addCertTab, setAddCertTab] = useState<'probe' | 'mint'>('probe');
 
@@ -60,6 +65,12 @@ export const AddCertModal: React.FC<AddCertModalProps> = ({
   const [targetCertPath, setTargetCertPath] = useState('/etc/ssl/certs/');
   const [reloadCommand, setReloadCommand] = useState('systemctl reload nginx');
 
+  // Domain Control Validation (DCV) State
+  const [validationMethod, setValidationMethod] = useState<ValidationMethod>(ValidationMethod.DNS_01);
+  const [selectedCloudAccountId, setSelectedCloudAccountId] = useState<string>('');
+  const [adminEmail, setAdminEmail] = useState<string>('');
+  const [copiedDnsRecord, setCopiedDnsRecord] = useState(false);
+
   // Live TLS Probe State
   const [probeDomain, setProbeDomain] = useState('google.com');
   const [probePort, setProbePort] = useState(443);
@@ -72,245 +83,273 @@ export const AddCertModal: React.FC<AddCertModalProps> = ({
   const [isCreating, setIsCreating] = useState(false);
 
   // Set default CA if available
-    useEffect(() => {
-      if (caIntegrations.length > 0 && !selectedCaId) {
-        const defaultCa = caIntegrations.find((ca) => ca.isDefault) || caIntegrations[0];
-        if (defaultCa) {
-          setSelectedCaId(defaultCa.id);
-          setNewIssuer(defaultCa.name || defaultCa.provider);
-        }
+  useEffect(() => {
+    if (caIntegrations.length > 0 && !selectedCaId) {
+      const defaultCa = caIntegrations.find((ca) => ca.isDefault) || caIntegrations[0];
+      if (defaultCa) {
+        setSelectedCaId(defaultCa.id);
+        setNewIssuer(defaultCa.name || defaultCa.provider);
       }
-    }, [caIntegrations, selectedCaId]);
+    }
+  }, [caIntegrations, selectedCaId]);
 
-    const handleClose = () => {
-      setProbeResult(null);
-      setProbeError(null);
-      onClose();
-    };
+  // Pre-select default cloud account for DNS-01 if available
+  useEffect(() => {
+    if (cloudAccounts.length > 0 && !selectedCloudAccountId) {
+      const firstAccount = cloudAccounts[0];
+      if (firstAccount) {
+        setSelectedCloudAccountId(firstAccount.id);
+      }
+    }
+  }, [cloudAccounts, selectedCloudAccountId]);
 
-    const handleProbeDomain = async (targetDomain?: string) => {
-      const domainToProbe = targetDomain || probeDomain;
-      if (!domainToProbe.trim()) return;
-      setIsProbing(true);
-      setProbeError(null);
-      setProbeResult(null);
-      try {
-        const res = await api.certificates.probe(domainToProbe.trim(), probePort);
-        setProbeResult(res);
-        setProbeDomain(domainToProbe.trim());
-        toast.success(
-          'TLS Discovery Complete',
-          `Retrieved live X.509 certificate for ${res.domain} (${res.daysRemaining} days remaining).`
+  // Pre-populate admin email when domain changes
+  useEffect(() => {
+    if (newDomain.trim()) {
+      const clean = newDomain.trim().replace(/^\*\./, '');
+      setAdminEmail(`admin@${clean}`);
+    }
+  }, [newDomain]);
+
+  // Wildcards mandate DNS-01 validation per CA/B forum
+  useEffect(() => {
+    if (certPurpose === 'WILDCARD') {
+      setValidationMethod(ValidationMethod.DNS_01);
+    }
+  }, [certPurpose]);
+
+  const handleClose = () => {
+    setProbeResult(null);
+    setProbeError(null);
+    onClose();
+  };
+
+  const handleProbeDomain = async (targetDomain?: string) => {
+    const domainToProbe = targetDomain || probeDomain;
+    if (!domainToProbe.trim()) return;
+    setIsProbing(true);
+    setProbeError(null);
+    setProbeResult(null);
+    try {
+      const res = await api.certificates.probe(domainToProbe.trim(), probePort);
+      setProbeResult(res);
+      setProbeDomain(domainToProbe.trim());
+      toast.success(
+        'TLS Discovery Complete',
+        `Retrieved live X.509 certificate for ${res.domain} (${res.daysRemaining} days remaining).`
+      );
+    } catch (err: any) {
+      const msg = err.message || 'Could not connect to domain over TLS on Port 443';
+      setProbeError(msg);
+      toast.error('TLS Probe Failed', msg);
+    } finally {
+      setIsProbing(false);
+    }
+  };
+
+  const handleImportProbedCert = async () => {
+    if (!probeResult) return;
+    setIsCreating(true);
+    try {
+      let keyAlgo = KeyAlgorithm.RSA_2048;
+      if (probeResult.keyAlgorithm.includes('4096')) keyAlgo = KeyAlgorithm.RSA_4096;
+      else if (probeResult.keyAlgorithm.includes('ECDSA') || probeResult.keyAlgorithm.includes('256')) {
+        keyAlgo = KeyAlgorithm.ECDSA_P256;
+      }
+
+      const created = await api.certificates.create({
+        domain: probeResult.domain,
+        sans: probeResult.sans,
+        keyAlgorithm: keyAlgo,
+        trackingMode: probeAutoRenew
+          ? CertificateTrackingMode.MANAGED_GATEWAY
+          : CertificateTrackingMode.MONITORED,
+        validationMethod: ValidationMethod.MANUAL,
+        autoRenew: probeAutoRenew,
+        renewBeforeDays: 30,
+        gatewayId: probeGatewayId || undefined,
+        issuer: probeResult.issuer,
+        notBefore: probeResult.notBefore,
+        notAfter: probeResult.notAfter,
+        serialNumber: probeResult.serialNumber,
+        fingerprintSha256: probeResult.fingerprintSha256,
+      });
+
+      onCreated(created);
+      handleClose();
+      toast.success(
+        'Live Certificate Imported',
+        `Imported ${created.domain} with actual remaining period of ${created.daysRemaining} days.`
+      );
+    } catch (err: any) {
+      const msg = err.message || '';
+      if (
+        msg.toLowerCase().includes('quota') ||
+        msg.toLowerCase().includes('capacity') ||
+        msg.toLowerCase().includes('limit reached')
+      ) {
+        toast.warning(
+          'Certificate Limit Reached',
+          `You have reached the maximum certificate monitoring quota for your ${currentTenant?.tier || 'Community'
+          } plan. To monitor more endpoints, please upgrade to a Professional or Enterprise plan.`
         );
-      } catch (err: any) {
-        const msg = err.message || 'Could not connect to domain over TLS on Port 443';
-        setProbeError(msg);
-        toast.error('TLS Probe Failed', msg);
-      } finally {
-        setIsProbing(false);
+      } else {
+        toast.error('Import Failed', err.message || 'Failed to save discovered certificate to database.');
       }
-    };
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
-    const handleImportProbedCert = async () => {
-      if (!probeResult) return;
-      setIsCreating(true);
-      try {
-        let keyAlgo = KeyAlgorithm.RSA_2048;
-        if (probeResult.keyAlgorithm.includes('4096')) keyAlgo = KeyAlgorithm.RSA_4096;
-        else if (probeResult.keyAlgorithm.includes('ECDSA') || probeResult.keyAlgorithm.includes('256')) {
-          keyAlgo = KeyAlgorithm.ECDSA_P256;
-        }
+  const handleCreateCertificate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDomain.trim()) return;
 
-        const created = await api.certificates.create({
-          domain: probeResult.domain,
-          sans: probeResult.sans,
-          keyAlgorithm: keyAlgo,
-          trackingMode: probeAutoRenew
-            ? CertificateTrackingMode.MANAGED_GATEWAY
-            : CertificateTrackingMode.MONITORED,
-          validationMethod: ValidationMethod.MANUAL,
-          autoRenew: probeAutoRenew,
-          renewBeforeDays: 30,
-          gatewayId: probeGatewayId || undefined,
-          issuer: probeResult.issuer,
-          notBefore: probeResult.notBefore,
-          notAfter: probeResult.notAfter,
-          serialNumber: probeResult.serialNumber,
-          fingerprintSha256: probeResult.fingerprintSha256,
-        });
+    let finalDomain = newDomain.trim();
+    if (certPurpose === 'WILDCARD' && !finalDomain.startsWith('*.')) {
+      finalDomain = `*.${finalDomain}`;
+    }
 
-        onCreated(created);
-        handleClose();
-        toast.success(
-          'Live Certificate Imported',
-          `Imported ${created.domain} with actual remaining period of ${created.daysRemaining} days.`
-        );
-      } catch (err: any) {
-        const msg = err.message || '';
-        if (
-          msg.toLowerCase().includes('quota') ||
-          msg.toLowerCase().includes('capacity') ||
-          msg.toLowerCase().includes('limit reached')
-        ) {
-          toast.warning(
-            'Certificate Limit Reached',
-              `You have reached the maximum certificate monitoring quota for your ${currentTenant?.tier || 'Community'
-              } plan. To monitor more endpoints, please upgrade to a Professional or Enterprise plan.`
-        );
-        } else {
-          toast.error('Import Failed', err.message || 'Failed to save discovered certificate to database.');
-        }
-      } finally {
-        setIsCreating(false);
-      }
-    };
+    const sansArray = newSans
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
 
-    const handleCreateCertificate = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!newDomain.trim()) return;
+    setIsCreating(true);
+    try {
+      const notBefore = new Date();
+      const notAfter = new Date(Date.now() + newValidityDays * 86400000);
 
-      let finalDomain = newDomain.trim();
-      if (certPurpose === 'WILDCARD' && !finalDomain.startsWith('*.')) {
-        finalDomain = `*.${finalDomain}`;
-      }
+      const isPrivatePki = selectedCaId.includes('vault') || selectedCaId.includes('msca') || selectedCaId.includes('aws-pca') || newIssuer.toLowerCase().includes('vault') || newIssuer.toLowerCase().includes('private');
 
-      const sansArray = newSans
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
+      const created = await api.certificates.create({
+        domain: finalDomain,
+        sans: sansArray.length > 0 ? sansArray : [finalDomain],
+        keyAlgorithm: newAlgorithm,
+        validationMethod: isPrivatePki ? ValidationMethod.MANUAL : validationMethod,
+        issuer: newIssuer,
+        caIntegrationId: selectedCaId || undefined,
+        cloudAccountId: validationMethod === ValidationMethod.DNS_01 ? (selectedCloudAccountId || undefined) : undefined,
+        notBefore: notBefore.toISOString(),
+        notAfter: notAfter.toISOString(),
+        renewBeforeDays: renewBeforeDays,
+        autoRenew: autoRenew,
+        gatewayId: selectedGatewayId || undefined,
+        deploymentTargetType: selectedGatewayId ? 'GATEWAY' : 'CLOUD_ALB',
+      });
 
-      setIsCreating(true);
-      try {
-        const notBefore = new Date();
-        const notAfter = new Date(Date.now() + newValidityDays * 86400000);
+      onCreated(created);
+      handleClose();
+      setNewDomain('');
+      setNewSans('');
+      toast.success(
+        'Certificate Created',
+        `Initiated automated lifecycle tracking for ${created.domain} with ${autoRenew ? 'autonomous renewal' : 'manual tracking'}.`
+      );
+    } catch (err: any) {
+      toast.error('Creation Failed', err.message || 'Failed to issue certificate.');
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
-        const created = await api.certificates.create({
-          domain: finalDomain,
-          sans: sansArray.length > 0 ? sansArray : [finalDomain],
-          keyAlgorithm: newAlgorithm,
-          validationMethod: ValidationMethod.DNS_01,
-          issuer: newIssuer,
-          caIntegrationId: selectedCaId || undefined,
-          notBefore: notBefore.toISOString(),
-          notAfter: notAfter.toISOString(),
-          renewBeforeDays: renewBeforeDays,
-          autoRenew: autoRenew,
-          gatewayId: selectedGatewayId || undefined,
-          deploymentTargetType: selectedGatewayId ? 'GATEWAY' : 'CLOUD_ALB',
-        });
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="Add / Discover SSL Certificate"
+      description="Track existing production certificates via live TLS probe, or issue a fresh managed certificate with automated CA & gateway binding."
+      maxWidth="lg"
+    >
+      <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
+        {/* Mode Switcher Tabs */}
+        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#F8FAFC] border border-slate-100">
+          <button
+            type="button"
+            onClick={() => setAddCertTab('probe')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${addCertTab === 'probe' ? 'pill-tab-active' : 'pill-tab-inactive'
+              }`}
+          >
+            <Radio className="h-3.5 w-3.5 text-indigo-600" />
+            <span>Live TLS Watchdog (Monitored Domain)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setAddCertTab('mint')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${addCertTab === 'mint' ? 'pill-tab-active' : 'pill-tab-inactive'
+              }`}
+          >
+            <Shield className="h-3.5 w-3.5 text-blue-600" />
+            <span>Issue Managed / Private PKI</span>
+          </button>
+        </div>
 
-        onCreated(created);
-        handleClose();
-        setNewDomain('');
-        setNewSans('');
-        toast.success(
-          'Certificate Created',
-            `Initiated automated lifecycle tracking for ${created.domain} with ${autoRenew ? 'autonomous renewal' : 'manual tracking'}.`
-        );
-      } catch (err: any) {
-        toast.error('Creation Failed', err.message || 'Failed to issue certificate.');
-      } finally {
-        setIsCreating(false);
-      }
-    };
-
-    return (
-      <Modal
-        isOpen={isOpen}
-        onClose={handleClose}
-        title="Add / Discover SSL Certificate"
-        description="Track existing production certificates via live TLS probe, or issue a fresh managed certificate with automated CA & gateway binding."
-        maxWidth="lg"
-      >
-            <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
-              {/* Mode Switcher Tabs */}
-              <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#F8FAFC] border border-slate-100">
+        {addCertTab === 'probe' ? (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Target Live Domain / FQDN
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. google.com, github.com, or your company domain"
+                  value={probeDomain}
+                  onChange={(e) => setProbeDomain(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleProbeDomain();
+                    }
+                  }}
+                  className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs"
+                />
+                <div className="w-24">
+                  <input
+                    type="number"
+                    placeholder="Port"
+                    value={probePort}
+                    onChange={(e) => setProbePort(Number(e.target.value) || 443)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs"
+                    title="TLS Port (default 443)"
+                  />
+                </div>
                 <button
                   type="button"
-                  onClick={() => setAddCertTab('probe')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${addCertTab === 'probe' ? 'pill-tab-active' : 'pill-tab-inactive'
-                    }`}
+                  onClick={() => handleProbeDomain()}
+                  disabled={isProbing || !probeDomain.trim()}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0 shadow-sm cursor-pointer"
                 >
-                  <Radio className="h-3.5 w-3.5 text-indigo-600" />
-                  <span>Live TLS Watchdog (Monitored Domain)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAddCertTab('mint')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${addCertTab === 'mint' ? 'pill-tab-active' : 'pill-tab-inactive'
-                    }`}
-                >
-                  <Shield className="h-3.5 w-3.5 text-blue-600" />
-                  <span>Issue Managed / Private PKI</span>
+                  <RefreshCw className={`h-3.5 w-3.5 ${isProbing ? 'animate-spin' : ''}`} />
+                  <span>{isProbing ? 'Probing...' : 'Probe TLS'}</span>
                 </button>
               </div>
+            </div>
 
-              {addCertTab === 'probe' ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Target Live Domain / FQDN
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="e.g. google.com, github.com, or your company domain"
-                        value={probeDomain}
-                        onChange={(e) => setProbeDomain(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleProbeDomain();
-                          }
-                        }}
-                        className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs"
-                      />
-                      <div className="w-24">
-                        <input
-                          type="number"
-                          placeholder="Port"
-                          value={probePort}
-                          onChange={(e) => setProbePort(Number(e.target.value) || 443)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs"
-                          title="TLS Port (default 443)"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleProbeDomain()}
-                        disabled={isProbing || !probeDomain.trim()}
-                        className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0 shadow-sm cursor-pointer"
-                      >
-                        <RefreshCw className={`h-3.5 w-3.5 ${isProbing ? 'animate-spin' : ''}`} />
-                        <span>{isProbing ? 'Probing...' : 'Probe TLS'}</span>
-                      </button>
-                    </div>
-                  </div>
+            {/* Quick Domain Suggestions */}
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <span className="font-semibold text-slate-400">Quick Test:</span>
+              {['google.com', 'github.com', 'cloudflare.com', 'microsoft.com'].map((domain) => (
+                <button
+                  key={domain}
+                  type="button"
+                  onClick={() => {
+                    setProbeDomain(domain);
+                    handleProbeDomain(domain);
+                  }}
+                  className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] transition-colors cursor-pointer"
+                >
+                  {domain}
+                </button>
+              ))}
+            </div>
 
-                  {/* Quick Domain Suggestions */}
-                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                    <span className="font-semibold text-slate-400">Quick Test:</span>
-                    {['google.com', 'github.com', 'cloudflare.com', 'microsoft.com'].map((domain) => (
-                      <button
-                        key={domain}
-                        type="button"
-                        onClick={() => {
-                          setProbeDomain(domain);
-                          handleProbeDomain(domain);
-                        }}
-                        className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] transition-colors cursor-pointer"
-                      >
-                        {domain}
-                      </button>
-                    ))}
-                  </div>
-
-                  {probeError && (
+            {probeError && (
               <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
                 <span>{probeError}</span>
               </div>
-                  )}
+            )}
 
             {probeResult && (
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
@@ -325,13 +364,12 @@ export const AddCertModal: React.FC<AddCertModalProps> = ({
                     </div>
                   </div>
                   <span
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                      probeResult.daysRemaining <= 15
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${probeResult.daysRemaining <= 15
                         ? 'bg-rose-100 text-rose-700'
                         : probeResult.daysRemaining <= 30
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-emerald-100 text-emerald-700'
-                    }`}
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-emerald-100 text-emerald-700'
+                      }`}
                   >
                     {probeResult.daysRemaining} Days Left
                   </span>
@@ -416,9 +454,9 @@ export const AddCertModal: React.FC<AddCertModalProps> = ({
                   </button>
                 </div>
               </div>
-              )}
+            )}
           </div>
-          ) : (
+        ) : (
           <form onSubmit={handleCreateCertificate} className="space-y-4">
             {/* 1. Purpose Profile */}
             <div>
@@ -440,8 +478,8 @@ export const AddCertModal: React.FC<AddCertModalProps> = ({
                     type="button"
                     onClick={() => setCertPurpose(item.id as any)}
                     className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${certPurpose === item.id
-                        ? 'bg-blue-50 border-blue-500 shadow-xs ring-1 ring-blue-500/20'
-                        : 'bg-white border-slate-200 hover:bg-slate-50'
+                      ? 'bg-blue-50 border-blue-500 shadow-xs ring-1 ring-blue-500/20'
+                      : 'bg-white border-slate-200 hover:bg-slate-50'
                       }`}
                   >
                     <div className={`text-xs font-bold ${certPurpose === item.id ? 'text-blue-700' : 'text-slate-800'}`}>
@@ -453,21 +491,21 @@ export const AddCertModal: React.FC<AddCertModalProps> = ({
               </div>
             </div>
 
-              {/* 2. Domain & SANs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Primary Domain (FQDN)
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder={certPurpose === 'WILDCARD' ? 'acme.com (becomes *.acme.com)' : 'e.g. checkout.acme.com'}
-                    value={newDomain}
-                    onChange={(e) => setNewDomain(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs font-mono"
-                  />
-                </div>
+            {/* 2. Domain & SANs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Primary Domain (FQDN)
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder={certPurpose === 'WILDCARD' ? 'acme.com (becomes *.acme.com)' : 'e.g. checkout.acme.com'}
+                  value={newDomain}
+                  onChange={(e) => setNewDomain(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs font-mono"
+                />
+              </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -535,23 +573,23 @@ export const AddCertModal: React.FC<AddCertModalProps> = ({
               </select>
             </div>
 
-              {/* 4. Algorithm & Lifespan */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Key Algorithm & Strength
-                  </label>
-                  <select
-                    value={newAlgorithm}
-                    onChange={(e) => setNewAlgorithm(e.target.value as KeyAlgorithm)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs bg-white font-medium text-slate-800"
-                  >
-                    <option value={KeyAlgorithm.RSA_2048}>RSA 2048 (Universal Legacy)</option>
-                    <option value={KeyAlgorithm.RSA_4096}>RSA 4096 (High Assurance)</option>
-                    <option value={KeyAlgorithm.ECDSA_P256}>ECDSA P-256 (NIST Prime / Fast)</option>
-                    <option value={KeyAlgorithm.ECDSA_P384}>ECDSA P-384 (CNSA 2.0 High Agility)</option>
-                  </select>
-                </div>
+            {/* 4. Algorithm & Lifespan */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Key Algorithm & Strength
+                </label>
+                <select
+                  value={newAlgorithm}
+                  onChange={(e) => setNewAlgorithm(e.target.value as KeyAlgorithm)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 shadow-xs bg-white font-medium text-slate-800"
+                >
+                  <option value={KeyAlgorithm.RSA_2048}>RSA 2048 (Universal Legacy)</option>
+                  <option value={KeyAlgorithm.RSA_4096}>RSA 4096 (High Assurance)</option>
+                  <option value={KeyAlgorithm.ECDSA_P256}>ECDSA P-256 (NIST Prime / Fast)</option>
+                  <option value={KeyAlgorithm.ECDSA_P384}>ECDSA P-384 (CNSA 2.0 High Agility)</option>
+                </select>
+              </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -570,7 +608,184 @@ export const AddCertModal: React.FC<AddCertModalProps> = ({
               </div>
             </div>
 
-            {/* 5. Autonomous Lifecycle & Gateway Deployment */}
+            {/* 5. Domain Control Validation (DCV) — Proof of Domain Ownership */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Globe className="h-3.5 w-3.5 text-blue-600" />
+                  <span>Domain Control Validation (DCV) — Proof of Ownership</span>
+                </label>
+                <InfoBubble
+                  content="To issue a public certificate, the Certificate Authority requires proof that you own or control the target domain (CA/Browser Forum Baseline Requirements)."
+                  position="bottom"
+                />
+              </div>
+
+              {selectedCaId.includes('vault') || selectedCaId.includes('msca') || selectedCaId.includes('aws-pca') || newIssuer.toLowerCase().includes('vault') || newIssuer.toLowerCase().includes('private') ? (
+                <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center gap-2.5 text-xs text-emerald-800">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span>
+                    <strong>Internal Enterprise CA</strong>: Domain Control Validation is automatically satisfied because your organization owns and controls this private PKI hierarchy.
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {/* Validation Method Selector Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      {
+                        id: ValidationMethod.DNS_01,
+                        label: 'Auto Cloud DNS',
+                        sub: 'Zero-touch API',
+                        icon: Cloud,
+                        recommended: true,
+                      },
+                      {
+                        id: ValidationMethod.MANUAL,
+                        label: 'Manual DNS Record',
+                        sub: 'TXT / CNAME copy',
+                        icon: Terminal,
+                      },
+                      {
+                        id: ValidationMethod.HTTP_01,
+                        label: 'HTTP-01 Challenge',
+                        sub: 'Port 80 file token',
+                        icon: Server,
+                        disabled: certPurpose === 'WILDCARD',
+                      },
+                      {
+                        id: ValidationMethod.EMAIL,
+                        label: 'Email Validation',
+                        sub: 'admin@ mailbox',
+                        icon: Mail,
+                        disabled: certPurpose === 'WILDCARD',
+                      },
+                    ].map((m) => {
+                      const Icon = m.icon;
+                      const isSelected = validationMethod === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          disabled={m.disabled}
+                          onClick={() => setValidationMethod(m.id as ValidationMethod)}
+                          className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer relative ${m.disabled
+                              ? 'opacity-40 cursor-not-allowed bg-slate-100 border-slate-200'
+                              : isSelected
+                                ? 'bg-blue-50 border-blue-500 shadow-xs ring-1 ring-blue-500/20'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
+                            }`}
+                        >
+                          {m.recommended && (
+                            <span className="absolute -top-1.5 -right-1 px-1.5 py-0.2 rounded-full text-[8px] font-bold bg-blue-600 text-white">
+                              AUTO
+                            </span>
+                          )}
+                          <Icon className={`h-4 w-4 mb-1.5 ${isSelected ? 'text-blue-600' : 'text-slate-500'}`} />
+                          <div className={`text-xs font-bold ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>
+                            {m.label}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-medium truncate">{m.sub}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {certPurpose === 'WILDCARD' && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-center gap-2">
+                      <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                      <span>Wildcard certificates (*.domain) strictly mandate DNS-01 challenge per CA/Browser Forum rules.</span>
+                    </div>
+                  )}
+
+                  {/* Context Details based on selected DCV method */}
+                  {validationMethod === ValidationMethod.DNS_01 && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-700">Select Connected Cloud DNS Account:</span>
+                        <span className="text-[10px] text-blue-600 font-semibold">Cloudflare &bull; AWS Route53 &bull; Azure DNS</span>
+                      </div>
+                      {cloudAccounts.length > 0 ? (
+                        <select
+                          value={selectedCloudAccountId}
+                          onChange={(e) => setSelectedCloudAccountId(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs bg-white font-medium text-slate-800 focus:outline-none focus:border-blue-600"
+                        >
+                          {cloudAccounts.map((acc) => (
+                            <option key={acc.id} value={acc.id}>
+                              {acc.name} ({acc.provider}) — {acc.maskedSecret}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex items-center justify-between">
+                          <span>No Cloud DNS account connected yet.</span>
+                          <span className="text-[10px] text-blue-700 font-bold underline cursor-pointer" onClick={() => setValidationMethod(ValidationMethod.MANUAL)}>
+                            Switch to Manual DNS
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {validationMethod === ValidationMethod.MANUAL && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-700">Add this verification record to your DNS Manager:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const clean = (newDomain.trim() || 'yourdomain.com').replace(/^\*\./, '');
+                            const recName = `_acme-challenge.${clean}`;
+                            const recVal = `clm-dcv-${(clean.split('.')[0] || 'auth')}-${Math.abs(clean.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a }, 0)).toString(16).padStart(16, '0')}`;
+                            navigator.clipboard.writeText(`${recName}  IN  TXT  "${recVal}"`);
+                            setCopiedDnsRecord(true);
+                            setTimeout(() => setCopiedDnsRecord(false), 2000);
+                            toast.success('Record Copied', 'Paste this record in GoDaddy, Namecheap, or your DNS provider.');
+                          }}
+                          className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs"
+                        >
+                          {copiedDnsRecord ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                          <span>{copiedDnsRecord ? 'Copied' : 'Copy Record'}</span>
+                        </button>
+                      </div>
+                      <div className="p-2.5 bg-slate-900 text-slate-200 font-mono text-[11px] rounded-lg space-y-1">
+                        <div><span className="text-slate-400">Type:</span> <span className="text-emerald-400 font-bold">TXT</span></div>
+                        <div><span className="text-slate-400">Host:</span> <span className="text-white font-bold">_acme-challenge.{(newDomain.trim() || 'yourdomain.com').replace(/^\*\./, '')}</span></div>
+                        <div className="truncate"><span className="text-slate-400">Value:</span> <span className="text-amber-300">clm-dcv-{(newDomain.trim().split('.')[0] || 'token')}-9f82e1a47c</span></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {validationMethod === ValidationMethod.HTTP_01 && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs text-slate-700">
+                      <div className="font-bold text-slate-800">HTTP-01 Web Root Validation:</div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        The Certificate Authority will send an HTTP GET request to <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">http://{(newDomain.trim() || 'yourdomain.com').replace(/^\*\./, '')}/.well-known/acme-challenge/&lt;token&gt;</code> over public Port 80. Your Satellite Gateway daemon will automatically place this token.
+                      </p>
+                    </div>
+                  )}
+
+                  {validationMethod === ValidationMethod.EMAIL && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+                      <span className="font-bold text-slate-700">Authorized Verification Email:</span>
+                      <input
+                        type="email"
+                        value={adminEmail}
+                        onChange={(e) => setAdminEmail(e.target.value)}
+                        placeholder={`admin@${(newDomain.trim() || 'yourdomain.com').replace(/^\*\./, '')}`}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs bg-white text-slate-800 focus:outline-none focus:border-blue-600 font-mono"
+                      />
+                      <p className="text-[10px] text-slate-400">
+                        The CA sends an approval link to standard authorized mailboxes (admin@, administrator@, webmaster@).
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 6. Autonomous Lifecycle & Gateway Deployment */}
             <div className="p-3.5 rounded-2xl bg-blue-50/60 border border-blue-100 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">

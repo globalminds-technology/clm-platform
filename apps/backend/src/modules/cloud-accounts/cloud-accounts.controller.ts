@@ -24,10 +24,10 @@ import { Role } from '@clm/shared-types';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('cloud-accounts')
 export class CloudAccountsController {
-  constructor(private readonly service: CloudAccountsService) {}
+  constructor(private readonly service: CloudAccountsService) { }
 
   @Post()
-  @Roles(Role.TENANT_ADMIN, Role.SECURITY_LEAD)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register cloud provider account credentials (AES-256-GCM encrypted)' })
   @ApiResponse({ status: 201, description: 'Cloud account registered and encrypted' })
@@ -47,7 +47,7 @@ export class CloudAccountsController {
   }
 
   @Post(':id/test')
-  @Roles(Role.TENANT_ADMIN, Role.SECURITY_LEAD)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Test cloud credentials authentication and discover resources' })
   @ApiResponse({ status: 200, description: 'Authentication handshake test result' })

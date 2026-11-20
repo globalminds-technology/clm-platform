@@ -1,5 +1,52 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsObject } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, IsObject, IsArray } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+
+export class DiscoveredCertDto {
+  @ApiProperty({ example: 'api.example.com' })
+  @IsString()
+  @IsNotEmpty()
+  domain!: string;
+
+  @ApiProperty({ example: ['api.example.com', 'api-v2.example.com'], required: false })
+  @IsArray()
+  @IsOptional()
+  sans?: string[];
+
+  @ApiProperty({ example: "Let's Encrypt Authority X3" })
+  @IsString()
+  @IsNotEmpty()
+  issuer!: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  serialNumber?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  fingerprintSha256?: string;
+
+  @ApiProperty({ example: 'RSA_2048', required: false })
+  @IsString()
+  @IsOptional()
+  keyAlgorithm?: string;
+
+  @ApiProperty({ example: '2026-01-01T00:00:00Z' })
+  @IsString()
+  @IsNotEmpty()
+  notBefore!: string;
+
+  @ApiProperty({ example: '2026-04-01T00:00:00Z' })
+  @IsString()
+  @IsNotEmpty()
+  notAfter!: string;
+
+  @ApiProperty({ example: 45, required: false })
+  @IsNumber()
+  @IsOptional()
+  expiryDays?: number;
+}
 
 export class GatewayHeartbeatDto {
   @ApiProperty({ example: '20000000-0000-0000-0000-000000000001', description: 'Enrolled Gateway UUID' })
@@ -29,5 +76,10 @@ export class GatewayHeartbeatDto {
     cpuUsage: number;
     memoryMb: number;
   };
+
+  @ApiProperty({ type: [DiscoveredCertDto], required: false, description: 'Certificates discovered on local filesystem' })
+  @IsArray()
+  @IsOptional()
+  discoveredCertificates?: DiscoveredCertDto[];
 }
 

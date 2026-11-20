@@ -16,9 +16,9 @@ export const CreateDiscoveryJobModal: React.FC<CreateDiscoveryJobModalProps> = (
   onSubmit,
   gateways,
 }) => {
-  const [name, setName] = useState('VPC Internal Subnet Scan');
-  const [targets, setTargets] = useState('10.0.1.0/24');
-  const [ports, setPorts] = useState('443, 8443');
+  const [name, setName] = useState('');
+  const [targets, setTargets] = useState('');
+  const [ports, setPorts] = useState('443');
   const [gateway, setGateway] = useState('INTERNET');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -30,9 +30,9 @@ export const CreateDiscoveryJobModal: React.FC<CreateDiscoveryJobModalProps> = (
       ports: ports.trim() || '443',
       gateway,
     });
-    setName('VPC Internal Subnet Scan');
-    setTargets('10.0.1.0/24');
-    setPorts('443, 8443');
+    setName('');
+    setTargets('');
+    setPorts('443');
     setGateway('INTERNET');
   };
 
@@ -64,7 +64,7 @@ export const CreateDiscoveryJobModal: React.FC<CreateDiscoveryJobModalProps> = (
             required
             value={targets}
             onChange={(e) => setTargets(e.target.value)}
-            placeholder="e.g. api.fintechglobal.com, 10.0.1.0/24"
+            placeholder="e.g. api.yourcompany.com, 10.0.1.0/24"
             className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-600 bg-white"
           />
         </div>

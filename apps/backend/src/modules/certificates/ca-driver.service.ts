@@ -324,6 +324,10 @@ const challengeCreateFn = async (authz: any, challenge: any, keyAuthorization: s
     await this.upsertAzureDnsTxtRecord(cloudAccount, authz.identifier.value, dnsRecordName, keyAuthorization, 'UPSERT');
   } else if (cloudAccount && cloudAccount.provider === CloudProvider.GCP) {
     await this.upsertGcpCloudDnsTxtRecord(cloudAccount, authz.identifier.value, dnsRecordName, keyAuthorization, 'UPSERT');
+  } else if (cloudAccount && (cloudAccount.provider === CloudProvider.CLOUDFLARE || (cloudAccount.provider as any) === 'CLOUDFLARE')) {
+    await this.upsertCloudflareDnsTxtRecord(cloudAccount, authz.identifier.value, dnsRecordName, keyAuthorization, 'UPSERT');
+  } else if (credentials?.cloudflareApiToken) {
+    await this.upsertCloudflareDnsTxtRecord({ credentials }, authz.identifier.value, dnsRecordName, keyAuthorization, 'UPSERT');
   } else {
     this.logger.warn(`No cloud DNS provider configured for '${options.domain}'. Manual TXT record addition may be required: ${dnsRecordName} = ${keyAuthorization}`);
   }
@@ -351,6 +355,18 @@ const challengeRemoveFn = async (authz: any, challenge: any, keyAuthorization: s
       await this.upsertGcpCloudDnsTxtRecord(cloudAccount, authz.identifier.value, dnsRecordName, keyAuthorization, 'DELETE');
     } catch (err: any) {
       this.logger.warn(`Failed to cleanup GCP Cloud DNS TXT record: ${err.message}`);
+    }
+  } else if (cloudAccount && (cloudAccount.provider === CloudProvider.CLOUDFLARE || (cloudAccount.provider as any) === 'CLOUDFLARE')) {
+    try {
+      await this.upsertCloudflareDnsTxtRecord(cloudAccount, authz.identifier.value, dnsRecordName, keyAuthorization, 'DELETE');
+    } catch (err: any) {
+      this.logger.warn(`Failed to cleanup Cloudflare TXT record: ${err.message}`);
+    }
+  } else if (credentials?.cloudflareApiToken) {
+    try {
+      await this.upsertCloudflareDnsTxtRecord({ credentials }, authz.identifier.value, dnsRecordName, keyAuthorization, 'DELETE');
+    } catch (err: any) {
+      this.logger.warn(`Failed to cleanup Cloudflare TXT record: ${err.message}`);
     }
   }
 };
@@ -657,6 +673,121 @@ try {
     }
 
     this.logger.log(`Executing GCP Cloud DNS ${action} for TXT '${fqdnRecordName}' (domain: ${domain}) in project '${projectId}'`);
+  }
+
+  /**
+   * Automatically creates or removes the `_acme-challenge` DNS TXT record in Cloudflare via v4 REST API
+   */
+  private async upsertCloudflareDnsTxtRecord(
+    cloudAccountOrCreds: any,
+    domain: string,
+    recordName: string,
+    txtValue: string,
+    action: 'UPSERT' | 'DELETE',
+  ): Promise<void> {
+    const creds = cloudAccountOrCreds.credentials || {};
+    let apiToken = creds.cloudflareApiToken || creds.apiToken || process.env.CLOUDFLARE_API_TOKEN;
+
+    if (!apiToken && cloudAccountOrCreds.encryptedCredentials) {
+      try {
+        const decrypted = this.cryptoService.decryptAes256Gcm(
+          cloudAccountOrCreds.encryptedCredentials,
+          cloudAccountOrCreds.encryptionIv,
+          cloudAccountOrCreds.encryptionTag,
+        );
+        const parsed = JSON.parse(decrypted);
+        apiToken = parsed.cloudflareApiToken || parsed.apiToken;
+      } catch (err: any) {
+        this.logger.warn(`Could not decrypt Cloudflare credentials: ${err.message}`);
+      }
+    }
+
+    if (!apiToken) {
+      this.logger.warn(`Cloudflare API Token missing for automated DNS-01 verification of domain '${domain}'`);
+      return;
+    }
+
+    const parts = domain.split('.');
+    const apexDomain = parts.slice(-2).join('.');
+
+    try {
+      // 1. Resolve Zone ID from Cloudflare
+      let zoneId = creds.zoneId || cloudAccountOrCreds.cloudflareZoneId;
+      if (!zoneId) {
+        const zoneRes = await fetch(`https://api.cloudflare.com/client/v4/zones?name=${apexDomain}&status=active`, {
+          headers: {
+            Authorization: `Bearer ${apiToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (zoneRes.ok) {
+          const zoneData: any = await zoneRes.json();
+          zoneId = zoneData.result?.[0]?.id;
+        }
+      }
+
+      if (!zoneId) {
+        this.logger.warn(`Could not locate Cloudflare active Zone ID for apex domain '${apexDomain}'`);
+        return;
+      }
+
+      // 2. Query for existing TXT records matching recordName
+      const listRes = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records?type=TXT&name=${recordName}`, {
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const existingRecords = listRes.ok ? ((await listRes.json()) as any)?.result || [] : [];
+      const existingRecord = existingRecords[0];
+
+      if (action === 'UPSERT') {
+        if (existingRecord) {
+          const updateRes = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records/${existingRecord.id}`, {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              type: 'TXT',
+              name: recordName,
+              content: txtValue,
+              ttl: 120,
+            }),
+          });
+          this.logger.log(`Cloudflare DNS TXT record updated for '${recordName}' (status: ${updateRes.status})`);
+        } else {
+          const createRes = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              type: 'TXT',
+              name: recordName,
+              content: txtValue,
+              ttl: 120,
+            }),
+          });
+          this.logger.log(`Cloudflare DNS TXT record created for '${recordName}' (status: ${createRes.status})`);
+        }
+      } else if (action === 'DELETE' && existingRecord) {
+        await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records/${existingRecord.id}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${apiToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        this.logger.log(`Cloudflare DNS TXT record removed for '${recordName}'`);
+      }
+    } catch (cfErr: any) {
+      this.logger.error(`Cloudflare DNS TXT operation failed: ${cfErr.message}`);
+    }
   }
 
   private resolveAzureCredentials(cloudAccount: any) {

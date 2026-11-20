@@ -1,5 +1,5 @@
 import React from 'react';
-import { Radio, RefreshCw } from 'lucide-react';
+import { Radio, RefreshCw, Trash2 } from 'lucide-react';
 import { Badge } from '@clm/ui';
 import { type DiscoveryJob } from '../types';
 
@@ -7,17 +7,19 @@ interface DiscoveryJobsProps {
   jobs: DiscoveryJob[];
   isScanning: boolean;
   onTriggerScan: (jobId: string) => void;
+  onDeleteJob?: (jobId: string) => void;
 }
 
 export const DiscoveryJobs: React.FC<DiscoveryJobsProps> = ({
   jobs,
   isScanning,
   onTriggerScan,
+  onDeleteJob,
 }) => {
   if (jobs.length === 0) {
     return (
       <div className="p-8 text-center text-slate-400 text-xs bg-[#F8FAFC] rounded-2xl border border-slate-100">
-        No discovery jobs created yet. Click "Create Discovery Job" to scan your network or domains.
+        No network discovery jobs created yet. Click "+ Create Scanner" to configure a target subnet, domain, or IP range to scan.
       </div>
     );
   }
@@ -39,9 +41,21 @@ export const DiscoveryJobs: React.FC<DiscoveryJobsProps> = ({
                 </span>
               </div>
             </div>
-            <Badge variant={job.status === 'RUNNING' ? 'warning' : 'success'}>
-              {job.status}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant={job.status === 'RUNNING' ? 'warning' : 'success'}>
+                {job.status}
+              </Badge>
+              {onDeleteJob && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteJob(job.id)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                  title="Delete scanner"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-200/60">

@@ -73,11 +73,56 @@ export class GatewayIngressController {
   @Header('Content-Type', 'text/x-shellscript')
   @ApiOperation({ summary: 'Download automated bootstrap installer script' })
   getInstallerScript(): string {
-    const scriptPath = path.resolve(__dirname, '../../../../gateway/scripts/install.sh');
-    if (fs.existsSync(scriptPath)) {
-      return fs.readFileSync(scriptPath, 'utf8');
+    const candidatePaths = [
+      path.resolve(__dirname, '../../../../gateway/scripts/install.sh'),
+      path.resolve(process.cwd(), 'apps/gateway/scripts/install.sh'),
+      path.resolve(process.cwd(), 'gateway/scripts/install.sh'),
+      path.resolve(__dirname, '../../../gateway/scripts/install.sh'),
+    ];
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        return fs.readFileSync(p, 'utf8');
+      }
     }
     return `#!/usr/bin/env bash\necho "[ERROR] Installer script not found on host."\nexit 1;\n`;
+  }
+
+  @Public()
+  @Get('cloudformation.yaml')
+  @Header('Content-Type', 'text/yaml')
+  @Header('Content-Disposition', 'attachment; filename="clm-satellite-gateway.yaml"')
+  @ApiOperation({ summary: 'Download CloudFormation YAML template pre-configured for VPC deployment' })
+  getCloudFormationTemplate(): string {
+    const candidatePaths = [
+      path.resolve(__dirname, '../../../../infra/cloudformation/clm-satellite-gateway.yaml'),
+      path.resolve(process.cwd(), 'infra/cloudformation/clm-satellite-gateway.yaml'),
+      path.resolve(__dirname, '../../../infra/cloudformation/clm-satellite-gateway.yaml'),
+    ];
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        return fs.readFileSync(p, 'utf8');
+      }
+    }
+    return `# CLM Satellite Gateway Template\nAWSTemplateFormatVersion: '2010-09-09'\n`;
+  }
+
+  @Public()
+  @Get('runner.js')
+  @Header('Content-Type', 'application/javascript')
+  @ApiOperation({ summary: 'Download standalone satellite gateway runner script' })
+  getRunnerScript(): string {
+    const candidatePaths = [
+      path.resolve(__dirname, '../../../../gateway/runner.js'),
+      path.resolve(process.cwd(), 'apps/gateway/runner.js'),
+      path.resolve(process.cwd(), 'gateway/runner.js'),
+      path.resolve(__dirname, '../../../gateway/runner.js'),
+    ];
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        return fs.readFileSync(p, 'utf8');
+      }
+    }
+    return `console.error('[ERROR] Runner script not found on host.');\nprocess.exit(1);\n`;
   }
 }
 

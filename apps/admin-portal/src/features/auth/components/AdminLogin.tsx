@@ -31,6 +31,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoggedIn }) => {
       }
 
       if (res?.tokens?.accessToken) {
+        localStorage.setItem('clm_admin_jwt', res.tokens.accessToken);
         localStorage.setItem('clm_admin_access_token', res.tokens.accessToken);
       }
       localStorage.setItem('clm_admin_user', JSON.stringify(res.user));

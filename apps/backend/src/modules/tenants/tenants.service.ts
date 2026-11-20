@@ -1,16 +1,20 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { type Tenant } from '@clm/shared-types';
 import { TenantsRepository } from './tenants.repository';
 import { CryptoService } from '../../shared/crypto/crypto.service';
+import { StorageService } from '../../shared/storage/storage.service';
 import { type CreateTenantDto } from './dto/create-tenant.dto';
 import { type UpdateTenantDto } from './dto/update-tenant.dto';
 
 @Injectable()
 export class TenantsService {
+  private readonly logger = new Logger(TenantsService.name);
+
   constructor(
     private readonly tenantsRepository: TenantsRepository,
     private readonly cryptoService: CryptoService,
-  ) {}
+    private readonly storageService: StorageService,
+  ) { }
 
   async create(dto: CreateTenantDto): Promise<Tenant> {
     const existing = await this.tenantsRepository.findBySlug(dto.slug);
@@ -93,6 +97,21 @@ export class TenantsService {
   }
 
   async update(id: string, dto: UpdateTenantDto): Promise<Tenant> {
+    if (
+      dto.settings?.logoUrl &&
+      typeof dto.settings.logoUrl === 'string' &&
+      dto.settings.logoUrl.startsWith('data:image/') &&
+      this.storageService.isConfigured()
+    ) {
+      try {
+        const { url } = await this.storageService.uploadBase64(`logos/${id}/logo`, dto.settings.logoUrl);
+        dto.settings.logoUrl = url;
+        this.logger.log(`Uploaded tenant logo to Cloudflare R2: ${url}`);
+      } catch (err: any) {
+        this.logger.warn(`Failed to upload logo to Cloudflare R2 (${err.message}), falling back to direct storage.`);
+      }
+    }
+
     const tenant = await this.tenantsRepository.update(id, dto);
     if (!tenant) {
       throw new NotFoundException(`Tenant with ID '${id}' not found`);

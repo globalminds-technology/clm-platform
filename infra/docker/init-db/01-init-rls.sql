@@ -86,15 +86,15 @@ CREATE TABLE IF NOT EXISTS gateway_enrollment_tokens (
 
 -- Password Reset Tokens (System-wide recovery verification codes)
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
     email CITEXT NOT NULL,
     token_hash VARCHAR(255) NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     used_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_email ON password_reset_tokens (email);
 
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_email ON password_reset_tokens (email);
 
 -- Certificates (Tenant-scoped)
 CREATE TABLE IF NOT EXISTS certificates (
@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS certificates (
     revocation_reason VARCHAR(100),
     revoked_at TIMESTAMPTZ,
     last_renewed_at TIMESTAMPTZ,
+    certificate_pem TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -286,7 +287,7 @@ GRANT USAGE,
 SELECT ON SEQUENCES TO clm_app;
 
 -- 6. Seed Initial Data for Development & Local Testing
--- Demo Tenant: Acme Corp
+-- System Tenant: Platform Operator
 INSERT INTO
     tenants (
         id,
@@ -298,6 +299,15 @@ INSERT INTO
         max_gateways
     )
 VALUES (
+        '00000000-0000-0000-0000-000000000000',
+        'CLM SaaS Platform Operator',
+        'clm-operator-system',
+        'ACTIVE',
+        'ENTERPRISE',
+        99999,
+        999
+    ),
+    (
         'a0000000-0000-0000-0000-000000000001',
         'Acme Global Corp',
         'acme-global',
@@ -306,10 +316,10 @@ VALUES (
         1000,
         25
     )
-ON CONFLICT (slug) DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
--- Demo Super Admin (Platform Operator) & Tenant Admin
--- Password for demo users: "Password123!" (Argon2 / mock hash for seed)
+-- Demo Super Admin (Platform Operator) & 5 Tenant Portal Roles
+-- Password for all demo users: "Password123!" (Argon2id)
 INSERT INTO
     users (
         id,
@@ -321,7 +331,18 @@ INSERT INTO
         role,
         status
     )
-VALUES (
+VALUES 
+    (
+        '00000000-0000-0000-0000-000000000001',
+        '00000000-0000-0000-0000-000000000000',
+        'superadmin@clm.platform',
+        '$argon2id$v=19$m=65536,t=3,p=4$6HjL+7JfsReqtNVEejxDYA$Lz/iape+CZYS7eUjt5rXQ+qwvBukbFG57AXboUAZegc',
+        'Super',
+        'Admin',
+        'SUPER_ADMIN',
+        'ACTIVE'
+    ),
+    (
         '10000000-0000-0000-0000-000000000001',
         'a0000000-0000-0000-0000-000000000001',
         'admin@acme.com',
@@ -340,8 +361,37 @@ VALUES (
         'Stone',
         'DEVOPS_ENGINEER',
         'ACTIVE'
+    ),
+    (
+        '10000000-0000-0000-0000-000000000003',
+        'a0000000-0000-0000-0000-000000000001',
+        'security@acme.com',
+        '$argon2id$v=19$m=65536,t=3,p=4$6HjL+7JfsReqtNVEejxDYA$Lz/iape+CZYS7eUjt5rXQ+qwvBukbFG57AXboUAZegc',
+        'Sarah',
+        'Connor',
+        'SECURITY_LEAD',
+        'ACTIVE'
+    ),
+    (
+        '10000000-0000-0000-0000-000000000004',
+        'a0000000-0000-0000-0000-000000000001',
+        'auditor@acme.com',
+        '$argon2id$v=19$m=65536,t=3,p=4$6HjL+7JfsReqtNVEejxDYA$Lz/iape+CZYS7eUjt5rXQ+qwvBukbFG57AXboUAZegc',
+        'Arthur',
+        'Dent',
+        'AUDITOR',
+        'ACTIVE'
+    ),
+    (
+        '10000000-0000-0000-0000-000000000005',
+        'a0000000-0000-0000-0000-000000000001',
+        'readonly@acme.com',
+        '$argon2id$v=19$m=65536,t=3,p=4$6HjL+7JfsReqtNVEejxDYA$Lz/iape+CZYS7eUjt5rXQ+qwvBukbFG57AXboUAZegc',
+        'Rachel',
+        'Green',
+        'READ_ONLY',
+        'ACTIVE'
     )
-
 ON CONFLICT (tenant_id, email) DO NOTHING;
 
 -- Demo Gateway

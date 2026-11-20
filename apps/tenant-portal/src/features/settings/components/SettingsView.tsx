@@ -1,5 +1,6 @@
 import React from 'react';
 import { type Tenant, type CloudAccount, type CaIntegration, type User } from '@clm/shared-types';
+import { useAuth } from '../../../context/AuthContext';
 import { GeneralSettings } from './GeneralSettings';
 import { CloudAccounts } from './CloudAccounts';
 import { TeamRbac } from './TeamRbac';
@@ -30,6 +31,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   members,
   onMembersUpdated,
 }) => {
+  const { can } = useAuth();
   return (
     <div className="bg-white rounded-[28px] soft-card p-6 mr-3 mb-6 space-y-6">
       {/* Header and Sub-Tab Switcher */}
@@ -42,36 +44,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <button
             type="button"
             onClick={() => setSettingsSubTab('general')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              settingsSubTab === 'general' ? 'pill-tab-active' : 'pill-tab-inactive'
-            }`}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${settingsSubTab === 'general' ? 'pill-tab-active' : 'pill-tab-inactive'
+              }`}
           >
             General
           </button>
           <button
             type="button"
             onClick={() => setSettingsSubTab('cloud-accounts')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              settingsSubTab === 'cloud-accounts' ? 'pill-tab-active' : 'pill-tab-inactive'
-            }`}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${settingsSubTab === 'cloud-accounts' ? 'pill-tab-active' : 'pill-tab-inactive'
+              }`}
           >
             Cloud Providers ({cloudAccounts.length})
           </button>
-          <button
-            type="button"
-            onClick={() => setSettingsSubTab('team')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              settingsSubTab === 'team' ? 'pill-tab-active' : 'pill-tab-inactive'
-            }`}
-          >
-            Team &amp; RBAC ({members.length})
-          </button>
+          {can('manageTeam') && (
+            <button
+              type="button"
+              onClick={() => setSettingsSubTab('team')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${settingsSubTab === 'team' ? 'pill-tab-active' : 'pill-tab-inactive'
+                }`}
+            >
+              Team &amp; RBAC ({members.length})
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setSettingsSubTab('ca-integrations')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              settingsSubTab === 'ca-integrations' ? 'pill-tab-active' : 'pill-tab-inactive'
-            }`}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${settingsSubTab === 'ca-integrations' ? 'pill-tab-active' : 'pill-tab-inactive'
+              }`}
           >
             Certificate Authorities ({caIntegrations.length})
           </button>

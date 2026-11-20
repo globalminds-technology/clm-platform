@@ -16,8 +16,8 @@ export class CertificatesRepository {
 
   async findAll(tenantId: string, filters?: CertificateFilterParams): Promise<Certificate[]> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
-      let query = 'SELECT * FROM certificates WHERE 1=1';
-      const params: any[] = [];
+      let query = 'SELECT * FROM certificates WHERE tenant_id = $1';
+      const params: any[] = [tenantId];
 
       if (filters?.domain) {
         params.push(`%${filters.domain}%`);
@@ -38,7 +38,10 @@ export class CertificatesRepository {
 
   async findById(tenantId: string, id: string): Promise<Certificate | null> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
-      const res = await client.query('SELECT * FROM certificates WHERE id = $1;', [id]);
+      const res = await client.query(
+        'SELECT * FROM certificates WHERE id = $1 AND tenant_id = $2;',
+        [id, tenantId],
+      );
       if (res.rows.length === 0) return null;
       return this.mapRowToCertificate(res.rows[0]);
     });
@@ -46,14 +49,20 @@ export class CertificatesRepository {
 
   async create(tenantId: string, dto: CreateCertificateDto): Promise<Certificate> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
-      const tenantCheck = await client.query('SELECT status, tier, max_certificates FROM tenants WHERE id = $1;', [tenantId]);
+      const tenantCheck = await client.query(
+        'SELECT status, tier, max_certificates FROM tenants WHERE id = $1;',
+        [tenantId],
+      );
       const tenantRow = tenantCheck.rows[0];
       if (tenantRow?.status === 'PENDING_APPROVAL') {
         throw new ForbiddenException('Certificate issuance is locked. Organization is pending security review.');
       }
 
-      // Check tier quota limit (Free vs Paid)
-      const countRes = await client.query('SELECT COUNT(*) FROM certificates WHERE status != $1;', [CertStatus.REVOKED]);
+      // Check tier quota limit strictly for this tenant
+      const countRes = await client.query(
+        'SELECT COUNT(*) FROM certificates WHERE tenant_id = $1 AND status != $2;',
+        [tenantId, CertStatus.REVOKED],
+      );
       const currentActiveCount = parseInt(countRes.rows[0].count, 10) || 0;
       const maxAllowed = tenantRow?.max_certificates || 50;
 
@@ -84,8 +93,8 @@ export class CertificatesRepository {
         `INSERT INTO certificates (
           tenant_id, domain, sans, status, key_algorithm, tracking_mode, issuer,
           serial_number, fingerprint_sha256, not_before, not_after,
-          auto_renew, renew_before_days, gateway_id, ca_integration_id, cloud_account_id, deployment_target_type
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+          auto_renew, renew_before_days, gateway_id, ca_integration_id, cloud_account_id, deployment_target_type, certificate_pem
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         RETURNING *;`,
         [
           tenantId,
@@ -105,6 +114,7 @@ export class CertificatesRepository {
           dto.caIntegrationId || null,
           dto.cloudAccountId || null,
           dto.deploymentTargetType || 'GATEWAY',
+          dto.certificatePem || null,
         ],
       );
 
@@ -158,7 +168,7 @@ export class CertificatesRepository {
            SET sans = $1, status = $2, key_algorithm = $3, tracking_mode = $4, issuer = $5,
                serial_number = $6, fingerprint_sha256 = $7, not_before = $8, not_after = $9,
                updated_at = NOW()
-           WHERE id = $10
+           WHERE id = $10 AND tenant_id = $11
            RETURNING *;`,
           [
             data.sans || [data.domain],
@@ -171,14 +181,14 @@ export class CertificatesRepository {
             notBefore.toISOString(),
             notAfter.toISOString(),
             id,
+            tenantId,
           ],
         );
         return { cert: this.mapRowToCertificate(res.rows[0]), isNew: false };
       } else {
-        // Enforce quota limits for new monitored / discovered certificate additions
         const tenantCheck = await client.query('SELECT tier, max_certificates FROM tenants WHERE id = $1;', [tenantId]);
         const tenantRow = tenantCheck.rows[0];
-        const countRes = await client.query('SELECT COUNT(*) FROM certificates WHERE status != $1;', [CertStatus.REVOKED]);
+        const countRes = await client.query('SELECT COUNT(*) FROM certificates WHERE tenant_id = $1 AND status != $2;', [tenantId, CertStatus.REVOKED]);
         const currentActiveCount = parseInt(countRes.rows[0].count, 10) || 0;
         const maxAllowed = tenantRow?.max_certificates || 50;
 
@@ -234,7 +244,7 @@ export class CertificatesRepository {
          SET issuer = $1, serial_number = $2, fingerprint_sha256 = $3,
              not_before = $4, not_after = $5, sans = $6, status = $7,
              tracking_mode = 'MONITORED', updated_at = NOW()
-         WHERE id = $8
+         WHERE id = $8 AND tenant_id = $9
          RETURNING *;`,
         [
           liveData.issuer,
@@ -245,6 +255,7 @@ export class CertificatesRepository {
           liveData.sans || [liveData.domain],
           status,
           id,
+          tenantId,
         ],
       );
 
@@ -256,43 +267,49 @@ export class CertificatesRepository {
   async renew(
     tenantId: string,
     id: string,
-    issuedData ?: {
-      notBefore?: string;
-      notAfter?: string;
-      serialNumber?: string;
-      issuer?: string;
-      fingerprintSha256?: string;
-      caIntegrationId?: string;
-    },
-  ): Promise < Certificate | null > {
-    return this.tenantContextService.withTenantContext(tenantId, async client => {
-      const check = await client.query(
-        'SELECT tracking_mode, domain, ca_integration_id FROM certificates WHERE id = $1;',
-        [id],
-      );
+        issuedData ?: {
+          notBefore?: string;
+          notAfter?: string;
+          serialNumber?: string;
+          issuer?: string;
+          fingerprintSha256?: string;
+          caIntegrationId?: string;
+          certificatePem?: string;
+        },
+      ): Promise<Certificate | null>{
+        return this.tenantContextService.withTenantContext(tenantId, async client => {
+          const check = await client.query(
+            'SELECT tracking_mode, domain, ca_integration_id FROM certificates WHERE id = $1 AND tenant_id = $2;',
+            [id, tenantId],
+          );
 
-      if (check.rows.length > 0 && check.rows[0].tracking_mode === CertificateTrackingMode.MONITORED) {
-        throw new ForbiddenException(
-          `Domain "${check.rows[0].domain}" is an external monitored domain. Renewal must be performed on the origin host (e.g. Vercel, GitHub). Use "Re-Probe Live Server" to sync live server updates.`,
-        );
-      }
+          if (check.rows.length === 0) {
+            return null;
+          }
 
-      const notBefore = issuedData?.notBefore || new Date().toISOString();
-      const notAfter = issuedData?.notAfter || new Date(Date.now() + 90 * 86400000).toISOString();
+          if (check.rows[0].tracking_mode === CertificateTrackingMode.MONITORED) {
+            throw new ForbiddenException(
+              `Domain "${check.rows[0].domain}" is an external monitored domain. Renewal must be performed on the origin host (e.g. Vercel, GitHub). Use "Re-Probe Live Server" to sync live server updates.`,
+            );
+          }
+
+          const notBefore = issuedData?.notBefore || new Date().toISOString();
+          const notAfter = issuedData?.notAfter || new Date(Date.now() + 90 * 86400000).toISOString();
 
       const res = await client.query(
         `UPDATE certificates
          SET status = $1,
-             not_before = $2,
-             not_after = $3,
-             serial_number = COALESCE($4, serial_number),
-             issuer = COALESCE($5, issuer),
-             fingerprint_sha256 = COALESCE($6, fingerprint_sha256),
-             ca_integration_id = COALESCE($7, ca_integration_id),
-             last_renewed_at = NOW(),
-             updated_at = NOW()
-         WHERE id = $8
-         RETURNING *;`,
+            not_before = $2,
+            not_after = $3,
+            serial_number = COALESCE($4, serial_number),
+            issuer = COALESCE($5, issuer),
+            fingerprint_sha256 = COALESCE($6, fingerprint_sha256),
+            ca_integration_id = COALESCE($7, ca_integration_id),
+            certificate_pem = COALESCE($8, certificate_pem),
+            last_renewed_at = NOW(),
+            updated_at = NOW()
+         WHERE id = $9 AND tenant_id = $10
+         RETURNING *; `,
         [
           CertStatus.ACTIVE,
           notBefore,
@@ -301,7 +318,9 @@ export class CertificatesRepository {
           issuedData?.issuer || null,
           issuedData?.fingerprintSha256 || null,
           issuedData?.caIntegrationId || null,
+          issuedData?.certificatePem || null,
           id,
+          tenantId,
         ],
       );
 
@@ -310,30 +329,80 @@ export class CertificatesRepository {
     });
   }
 
-  async revoke(tenantId: string, id: string, reason ?: string): Promise < Certificate | null > {
-      return this.tenantContextService.withTenantContext(tenantId, async client => {
-        const res = await client.query(
-          `UPDATE certificates
-         SET status = $1,
-             revocation_reason = $2,
-             revoked_at = NOW(),
-             auto_renew = false,
-             updated_at = NOW()
-         WHERE id = $3
-         RETURNING *;`,
-          [CertStatus.REVOKED, reason || 'UNSPECIFIED', id],
-        );
-        if (res.rows.length === 0) return null;
-        return this.mapRowToCertificate(res.rows[0]);
-      });
-    }
+  async updateBinding(
+    tenantId: string,
+    id: string,
+    data: { caIntegrationId?: string | null; gatewayId?: string | null; autoRenew?: boolean; renewBeforeDays?: number },
+  ): Promise<Certificate | null> {
+    return this.tenantContextService.withTenantContext(tenantId, async client => {
+      const sets: string[] = [];
+      const values: any[] = [];
 
-  async delete (tenantId: string, id: string): Promise < boolean > {
-      return this.tenantContextService.withTenantContext(tenantId, async client => {
-        const res = await client.query('DELETE FROM certificates WHERE id = $1;', [id]);
-        return (res.rowCount ?? 0) > 0;
-      });
-    }
+      if (data.caIntegrationId !== undefined) {
+        values.push(data.caIntegrationId);
+        sets.push(`ca_integration_id = $${ values.length } `);
+      }
+      if (data.gatewayId !== undefined) {
+        values.push(data.gatewayId);
+        sets.push(`gateway_id = $${ values.length } `);
+      }
+      if (data.autoRenew !== undefined) {
+        values.push(data.autoRenew);
+        sets.push(`auto_renew = $${ values.length } `);
+      }
+      if (data.renewBeforeDays !== undefined) {
+        values.push(data.renewBeforeDays);
+        sets.push(`renew_before_days = $${ values.length } `);
+      }
+
+      if (sets.length === 0) {
+        const existing = await client.query('SELECT * FROM certificates WHERE id = $1 AND tenant_id = $2;', [id, tenantId]);
+        return existing.rows.length > 0 ? this.mapRowToCertificate(existing.rows[0]) : null;
+      }
+
+      sets.push('updated_at = NOW()');
+      values.push(id, tenantId);
+
+          const query = `
+        UPDATE certificates
+        SET ${sets.join(', ')}
+        WHERE id = $${values.length - 1} AND tenant_id = $${values.length}
+        RETURNING *;
+      `;
+
+      const res = await client.query(query, values);
+      if (res.rows.length === 0) return null;
+      return this.mapRowToCertificate(res.rows[0]);
+    });
+  }
+
+  async revoke(tenantId: string, id: string, reason?: string): Promise<Certificate | null> {
+    return this.tenantContextService.withTenantContext(tenantId, async client => {
+      const res = await client.query(
+        `UPDATE certificates
+         SET status = $1,
+        revocation_reason = $2,
+        revoked_at = NOW(),
+        auto_renew = false,
+        updated_at = NOW()
+         WHERE id = $3 AND tenant_id = $4
+         RETURNING *; `,
+        [CertStatus.REVOKED, reason || 'UNSPECIFIED', id, tenantId],
+      );
+      if (res.rows.length === 0) return null;
+      return this.mapRowToCertificate(res.rows[0]);
+    });
+  }
+
+  async delete(tenantId: string, id: string): Promise<boolean> {
+    return this.tenantContextService.withTenantContext(tenantId, async client => {
+      const res = await client.query(
+        'DELETE FROM certificates WHERE id = $1 AND tenant_id = $2;',
+        [id, tenantId],
+      );
+      return (res.rowCount ?? 0) > 0;
+    });
+  }
 
   private mapRowToCertificate(row: any): Certificate {
     const notAfter = new Date(row.not_after);
@@ -363,9 +432,9 @@ export class CertificatesRepository {
       revocationReason: row.revocation_reason || null,
       revokedAt: row.revoked_at instanceof Date ? row.revoked_at.toISOString() : row.revoked_at || null,
       deployTargetCount: 1,
+      certificatePem: row.certificate_pem || null,
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
     };
   }
 }
-

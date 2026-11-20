@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from '@clm/ui';
+import { api } from '../config/api';
 
 export interface AdminUser {
+  id?: string;
   email: string;
   firstName?: string;
   lastName?: string;
@@ -27,8 +29,27 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   });
 
+  useEffect(() => {
+    const token = localStorage.getItem('clm_admin_jwt') || localStorage.getItem('clm_admin_access_token');
+    if (token) {
+      api.auth.me()
+        .then((res: any) => {
+          if (res?.user && res.user.role === 'SUPER_ADMIN') {
+            setAdminUser(res.user);
+            localStorage.setItem('clm_admin_user', JSON.stringify(res.user));
+          } else if (res?.user && res.user.role !== 'SUPER_ADMIN') {
+            logout();
+          }
+        })
+        .catch(() => {
+          logout();
+        });
+    }
+  }, []);
+
   const logout = () => {
     localStorage.removeItem('clm_admin_user');
+    localStorage.removeItem('clm_admin_jwt');
     localStorage.removeItem('clm_admin_access_token');
     setAdminUser(null);
     toast.info('Signed Out', 'Platform Administrator session terminated.');
@@ -59,6 +80,7 @@ export const useAdminAuth = () => {
         setAdminUser: () => { },
         logout: () => {
           localStorage.removeItem('clm_admin_user');
+          localStorage.removeItem('clm_admin_jwt');
           localStorage.removeItem('clm_admin_access_token');
           window.location.reload();
         },
