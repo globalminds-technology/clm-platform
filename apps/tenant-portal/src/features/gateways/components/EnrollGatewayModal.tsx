@@ -79,10 +79,49 @@ export const EnrollGatewayModal: React.FC<EnrollGatewayModalProps> = ({
             <p className="text-xs text-slate-600 leading-relaxed">
               Launch the Satellite Gateway directly into your private AWS VPC. Provisions the zero-trust EC2 instance, attached IAM role (for AWS ACM &amp; ALB bindings), and outbound-only security group.
             </p>
-            <div className="p-3 bg-white/90 rounded-xl border border-slate-200/80 font-mono text-[11px] text-slate-700 space-y-1">
-              <div><strong>Target AWS Region:</strong> us-east-1</div>
-              <div><strong>Outbound Firewall:</strong> Zero Open Inbound Ports (Outbound HTTPS only)</div>
-              <div><strong>Bootstrap Token:</strong> {enrollToken ? `${enrollToken.slice(0, 16)}...` : 'Generating...'}</div>
+
+            {/* Dedicated Parameters Copy Box for CloudFormation */}
+            <div className="p-3 bg-white/95 rounded-xl border border-slate-200/90 space-y-2.5">
+              <div className="text-[11px] font-bold text-slate-800">Stack Parameters to Paste in AWS:</div>
+              
+              {/* Enrollment Token */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium">
+                  <span>EnrollmentToken</span>
+                  <span>Single-use 24h bootstrap token</span>
+                </div>
+                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono text-[11px]">
+                  <span className="truncate pr-2 text-slate-800 select-all">{enrollToken || 'Generating token...'}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(enrollToken)}
+                    disabled={!enrollToken}
+                    className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold flex items-center gap-1 shrink-0 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {copiedToken ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    <span>{copiedToken ? 'Copied' : 'Copy Token'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Control Plane URL */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium">
+                  <span>ControlPlaneUrl</span>
+                  <span>Outbound HTTPS API Target</span>
+                </div>
+                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono text-[11px]">
+                  <span className="truncate pr-2 text-slate-800 select-all">{API_BASE_URL}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(API_BASE_URL)}
+                    className="px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                  >
+                    <Copy className="h-3 w-3" />
+                    <span>Copy URL</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
