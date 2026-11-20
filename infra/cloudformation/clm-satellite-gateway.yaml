@@ -83,10 +83,13 @@ Resources:
     Properties:
       InstanceType: !Ref InstanceType
       IamInstanceProfile: !Ref GatewayInstanceProfile
-      SubnetId: !Ref SubnetId
-      SecurityGroupIds:
-        - !Ref GatewaySecurityGroup
       ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: '0'
+          GroupSet:
+            - !Ref GatewaySecurityGroup
+          SubnetId: !Ref SubnetId
       Tags:
         - Key: Name
           Value: !Sub 'clm-satellite-gateway-${AWS::StackName}'

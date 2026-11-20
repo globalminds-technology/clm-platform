@@ -89,12 +89,12 @@ export class AuthController {
       path: '/api/v1/auth',
     });
 
-    // Also set short-lived access token cookie for browser clients
+    // Also set access token cookie for browser clients
     res.cookie('clm_access_token', result.tokens.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, // 15 mins
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       path: '/',
     });
 

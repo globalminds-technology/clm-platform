@@ -45,8 +45,10 @@ export class AuthService {
       role: user.role,
     };
 
+    const jwtExpiry = (this.configService.get<string>('JWT_EXPIRES_IN') || '7d') as any;
+
     const accessToken = this.jwtService.sign(payload, {
-      expiresIn: process.env.NODE_ENV === 'production' ? '15m' : '7d',
+      expiresIn: jwtExpiry,
     });
 
     const refreshSecret = this.configService.get<string>(
@@ -58,14 +60,14 @@ export class AuthService {
       { sub: user.id, tenantId: user.tenantId },
       {
         secret: refreshSecret,
-        expiresIn: '7d',
+        expiresIn: '30d',
       },
     );
 
     return {
       accessToken,
       refreshToken,
-      expiresIn: 900,
+      expiresIn: 7 * 24 * 60 * 60,
     };
   }
 
@@ -117,16 +119,17 @@ export class AuthService {
         role: user.role,
       };
 
-      const newAccessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
+      const jwtExpiry = (this.configService.get<string>('JWT_EXPIRES_IN') || '7d') as any;
+      const newAccessToken = this.jwtService.sign(payload, { expiresIn: jwtExpiry });
       const newRefreshToken = this.jwtService.sign(
         { sub: user.id, tenantId: user.tenantId },
-        { secret: refreshSecret, expiresIn: '7d' },
+        { secret: refreshSecret, expiresIn: '30d' },
       );
 
       return {
         accessToken: newAccessToken,
         refreshToken: newRefreshToken,
-        expiresIn: 900,
+        expiresIn: 7 * 24 * 60 * 60,
       };
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
