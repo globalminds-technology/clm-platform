@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -16,6 +17,7 @@ import { Roles } from '../../shared/auth/roles.decorator';
 import { RolesGuard } from '../../shared/auth/roles.guard';
 import { JwtAuthGuard } from '../../shared/auth/jwt-auth.guard';
 import { CurrentTenant } from '../../shared/tenancy/current-tenant.decorator';
+import { CurrentUser } from '../../shared/auth/current-user.decorator';
 import { CertificatesService } from './certificates.service';
 import { CreateCertificateDto } from './dto/create-certificate.dto';
 
@@ -28,7 +30,7 @@ export class CertificatesController {
 
   @Post('probe')
   @HttpCode(HttpStatus.OK)
-  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.SECURITY_LEAD)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.SECURITY_LEAD, Role.DEVOPS_ENGINEER)
   @ApiOperation({ summary: 'Probe live domain over TLS to extract actual X.509 certificate and remaining validity' })
   @ApiResponse({ status: 200, description: 'Live TLS probe completed successfully' })
   async probe(
@@ -37,8 +39,16 @@ export class CertificatesController {
     return this.certificatesService.probeLive(body.domain, body.port || 443);
   }
 
+  @Get('ct-logs')
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.SECURITY_LEAD, Role.DEVOPS_ENGINEER, Role.AUDITOR, Role.READ_ONLY)
+  @ApiOperation({ summary: 'Poll public RFC 6962 Certificate Transparency logs for a domain' })
+  @ApiResponse({ status: 200, description: 'Public CT logs retrieved' })
+  async getCtLogs(@Query('domain') domain: string) {
+    return this.certificatesService.getCtLogs(domain);
+  }
+
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.AUDITOR)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.SECURITY_LEAD, Role.DEVOPS_ENGINEER, Role.AUDITOR, Role.READ_ONLY)
   @ApiOperation({ summary: 'List all certificates under RLS tenant isolation' })
   @ApiResponse({ status: 200, description: 'Certificates retrieved successfully' })
   async findAll(
@@ -49,7 +59,7 @@ export class CertificatesController {
   }
 
   @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.AUDITOR)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.SECURITY_LEAD, Role.DEVOPS_ENGINEER, Role.AUDITOR, Role.READ_ONLY)
   @ApiOperation({ summary: 'Get certificate details by ID' })
   @ApiResponse({ status: 200, description: 'Certificate retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Certificate not found' })
@@ -62,18 +72,19 @@ export class CertificatesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.SECURITY_LEAD, Role.DEVOPS_ENGINEER)
   @ApiOperation({ summary: 'Create and track a new SSL/TLS certificate' })
   @ApiResponse({ status: 201, description: 'Certificate registered' })
   async create(
     @CurrentTenant() tenantId: string,
     @Body() createDto: CreateCertificateDto,
+    @CurrentUser() user: any,
   ): Promise<Certificate> {
-    return this.certificatesService.create(tenantId, createDto);
+    return this.certificatesService.create(tenantId, createDto, user);
   }
 
   @Get(':id/renewal-context')
-  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.SECURITY_LEAD)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.SECURITY_LEAD, Role.DEVOPS_ENGINEER)
   @ApiOperation({ summary: 'Get pre-populated renewal context (tenant org data + connected cloud providers) for renewal modal' })
   @ApiResponse({ status: 200, description: 'Renewal context retrieved successfully' })
   async getRenewalContext(
@@ -85,7 +96,7 @@ export class CertificatesController {
 
   @Post(':id/generate-csr')
   @HttpCode(HttpStatus.OK)
-  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.SECURITY_LEAD)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.SECURITY_LEAD, Role.DEVOPS_ENGINEER)
   @ApiOperation({ summary: 'Generate fresh PKCS#10 CSR and key pair with tenant metadata for CA submission' })
   @ApiResponse({ status: 200, description: 'CSR generated successfully' })
   async generateCsr(
@@ -110,8 +121,9 @@ export class CertificatesController {
     @CurrentTenant() tenantId: string,
     @Param('id') id: string,
     @Body() renewRequest?: any,
+    @CurrentUser() user?: any,
   ): Promise<Certificate> {
-    return this.certificatesService.renew(tenantId, id, renewRequest);
+    return this.certificatesService.renew(tenantId, id, renewRequest, user);
   }
 
   @Post(':id/reprobe')
@@ -126,41 +138,59 @@ export class CertificatesController {
     return this.certificatesService.reprobe(tenantId, id);
   }
 
-@Post(':id/revoke')
-@HttpCode(HttpStatus.OK)
-@Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER)
-@ApiOperation({ summary: 'Revoke a certificate with RFC 5280 compliance reason code' })
-@ApiResponse({ status: 200, description: 'Certificate revoked and ledger updated' })
-async revoke(
-  @CurrentTenant() tenantId: string,
-  @Param('id') id: string,
-  @Body() body ?: any,
-): Promise < Certificate > {
-  return this.certificatesService.revoke(tenantId, id, body);
-}
-
-@Post(':id/deploy')
-@HttpCode(HttpStatus.OK)
-@Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER)
-@ApiOperation({ summary: 'Manually dispatch certificate deployment to assigned Satellite Gateway' })
-@ApiResponse({ status: 200, description: 'Deployment command dispatched' })
-async deploy(
-  @CurrentTenant() tenantId: string,
-  @Param('id') id: string,
-  @Body('gatewayId') gatewayId ?: string,
-) {
-  return this.certificatesService.deploy(tenantId, id, gatewayId);
-}
-
-@Delete(':id')
-@HttpCode(HttpStatus.NO_CONTENT)
-@Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN)
-@ApiOperation({ summary: 'Revoke and delete a certificate' })
-@ApiResponse({ status: 204, description: 'Certificate deleted' })
-async delete (
-  @CurrentTenant() tenantId: string,
+  @Post(':id/revoke')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.SECURITY_LEAD)
+  @ApiOperation({ summary: 'Revoke a certificate with RFC 5280 compliance reason code' })
+  @ApiResponse({ status: 200, description: 'Certificate revoked and ledger updated' })
+  async revoke(
+    @CurrentTenant() tenantId: string,
     @Param('id') id: string,
-  ): Promise < void> {
-  return this.certificatesService.delete(tenantId, id);
-}
+    @Body() body?: any,
+    @CurrentUser() user?: any,
+  ): Promise<Certificate> {
+    return this.certificatesService.revoke(tenantId, id, body, user);
+  }
+
+  @Post(':id/deploy')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER)
+  @ApiOperation({ summary: 'Manually dispatch certificate deployment to assigned Satellite Gateway' })
+  @ApiResponse({ status: 200, description: 'Deployment command dispatched' })
+  async deploy(
+    @CurrentTenant() tenantId: string,
+    @Param('id') id: string,
+    @Body('gatewayId') gatewayId?: string,
+    @Body('targetType') targetType?: string,
+    @CurrentUser() user?: any,
+  ) {
+    return this.certificatesService.deploy(tenantId, id, gatewayId, targetType, user);
+  }
+
+  @Patch(':id/binding')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.SECURITY_LEAD)
+  @ApiOperation({ summary: 'Update Sticky CA integration binding, auto-renew threshold, and Gateway' })
+  @ApiResponse({ status: 200, description: 'Certificate binding updated' })
+  async updateBinding(
+    @CurrentTenant() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: { caIntegrationId?: string | null; gatewayId?: string | null; autoRenew?: boolean; renewBeforeDays?: number },
+    @CurrentUser() user?: any,
+  ): Promise<Certificate> {
+    return this.certificatesService.updateBinding(tenantId, id, body, user);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN)
+  @ApiOperation({ summary: 'Revoke and delete a certificate' })
+  @ApiResponse({ status: 204, description: 'Certificate deleted' })
+  async delete(
+    @CurrentTenant() tenantId: string,
+    @Param('id') id: string,
+    @CurrentUser() user?: any,
+  ): Promise<void> {
+    return this.certificatesService.delete(tenantId, id, user);
+  }
 }

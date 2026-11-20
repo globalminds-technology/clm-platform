@@ -18,6 +18,7 @@ import {
   Shield,
   LayoutDashboard,
   Boxes,
+  ArrowLeft,
 } from 'lucide-react';
 import { TenantStatus } from '@clm/shared-types';
 import { Sidebar, TopHeader, StatusBadge } from '@clm/ui';
@@ -26,6 +27,7 @@ import { useAuth } from '../../context/AuthContext';
 export type AppTab =
   | 'dashboard'
   | 'certificates'
+  | 'add-certificate'
   | 'discovery'
   | 'gateways'
   | 'compliance'
@@ -63,13 +65,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onOpenEnrollGateway,
   children,
 }) => {
-  const { currentUser, currentTenant, logout, checkTenantVerificationStatus, isCheckingStatus } =
+  const { currentUser, currentTenant, logout, checkTenantVerificationStatus, isCheckingStatus, can } =
     useAuth();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const isPendingApproval = currentTenant?.status === TenantStatus.PENDING_APPROVAL;
 
-  const navItems = [
+  const allNavItems = [
     {
       id: 'dashboard',
       label: 'Dashboard',
@@ -90,6 +92,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       icon: <Radio className="h-5 w-5" />,
       active: activeTab === 'discovery',
       onClick: () => setActiveTab('discovery'),
+      hidden: !can('viewDiscovery'),
     },
     {
       id: 'gateways',
@@ -97,6 +100,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       icon: <Server className="h-5 w-5" />,
       active: activeTab === 'gateways',
       onClick: () => setActiveTab('gateways'),
+      hidden: !can('viewGateways'),
     },
     {
       id: 'compliance',
@@ -104,6 +108,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       icon: <ShieldCheck className="h-5 w-5" />,
       active: activeTab === 'compliance',
       onClick: () => setActiveTab('compliance'),
+      hidden: !can('viewCompliance'),
     },
     {
       id: 'integrations',
@@ -111,6 +116,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       icon: <Boxes className="h-5 w-5" />,
       active: activeTab === 'integrations',
       onClick: () => setActiveTab('integrations'),
+      hidden: !can('manageSettings'),
     },
     {
       id: 'audit',
@@ -118,6 +124,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       icon: <Zap className="h-5 w-5" />,
       active: activeTab === 'audit',
       onClick: () => setActiveTab('audit'),
+      hidden: !can('viewAudit'),
     },
     {
       id: 'alerts',
@@ -133,8 +140,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       icon: <Settings className="h-5 w-5" />,
       active: activeTab === 'settings',
       onClick: () => setActiveTab('settings'),
+      hidden: !can('manageSettings'),
     },
   ];
+
+  const navItems = allNavItems.filter((item) => !item.hidden);
 
   return (
     <div className="min-h-screen bg-[#F4F6FB] text-[#0F172A] flex p-3 font-sans selection:bg-blue-500/20 selection:text-blue-600">
@@ -143,7 +153,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         brandName={currentTenant?.name || 'CertFlow'}
-        brandIcon={<ShieldCheck className="h-6 w-6" />}
+        brandIcon={
+          currentTenant?.settings?.logoUrl ? (
+            <img
+              src={currentTenant.settings.logoUrl}
+              alt={currentTenant.name}
+              className="h-full w-full object-contain p-1 rounded-2xl bg-white"
+            />
+          ) : (
+            <ShieldCheck className="h-6 w-6" />
+          )
+        }
         items={navItems}
         user={{
           name: currentUser
@@ -160,129 +180,146 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       <main className="flex-1 flex flex-col min-w-0 pl-5 overflow-y-auto">
         <TopHeader
           icon={
-              activeTab === 'dashboard' ? (
-                <LayoutDashboard className="h-5 w-5 text-blue-600" />
-              ) : activeTab === 'compliance' ? (
-                <ShieldCheck className="h-5 w-5 text-blue-600" />
-              ) : activeTab === 'integrations' ? (
-                <Boxes className="h-5 w-5 text-blue-600" />
-              ) : activeTab === 'gateways' ? (
-                <Server className="h-5 w-5 text-blue-600" />
-              ) : activeTab === 'discovery' ? (
-                <Radio className="h-5 w-5 text-blue-600" />
-              ) : activeTab === 'audit' ? (
-                <Zap className="h-5 w-5 text-blue-600" />
-              ) : activeTab === 'alerts' ? (
-                <Bell className="h-5 w-5 text-blue-600" />
-              ) : activeTab === 'settings' ? (
-                <Settings className="h-5 w-5 text-blue-600" />
-              ) : (
-                <FileText className="h-5 w-5 text-blue-600" />
-              )
+            activeTab === 'dashboard' ? (
+              <LayoutDashboard className="h-5 w-5 text-blue-600" />
+            ) : activeTab === 'compliance' ? (
+              <ShieldCheck className="h-5 w-5 text-blue-600" />
+            ) : activeTab === 'integrations' ? (
+              <Boxes className="h-5 w-5 text-blue-600" />
+            ) : activeTab === 'gateways' ? (
+              <Server className="h-5 w-5 text-blue-600" />
+            ) : activeTab === 'discovery' ? (
+              <Radio className="h-5 w-5 text-blue-600" />
+            ) : activeTab === 'audit' ? (
+              <Zap className="h-5 w-5 text-blue-600" />
+            ) : activeTab === 'alerts' ? (
+              <Bell className="h-5 w-5 text-blue-600" />
+            ) : activeTab === 'settings' ? (
+              <Settings className="h-5 w-5 text-blue-600" />
+            ) : (
+              <FileText className="h-5 w-5 text-blue-600" />
+            )
           }
           title={
             activeTab === 'dashboard'
-        ? 'Cryptographic Posture & Security'
-        : activeTab === 'compliance'
-        ? 'Policy Governance & Compliance Audits'
-        : activeTab === 'integrations'
-        ? 'Integrations & Certificate Authorities'
-        : activeTab === 'gateways'
-        ? 'Local Gateways'
-        : activeTab === 'discovery'
-        ? 'Certificate Discovery & CT Surveillance'
-        : activeTab === 'audit'
-        ? 'Activity Logs'
-        : activeTab === 'alerts'
-        ? 'Security Alerts'
-        : activeTab === 'settings'
-        ? 'Tenant Settings'
-        : 'Certificates'
+              ? 'Cryptographic Posture & Security'
+              : activeTab === 'compliance'
+                ? 'Policy Governance & Compliance Audits'
+                : activeTab === 'integrations'
+                  ? 'Integrations & Certificate Authorities'
+                  : activeTab === 'gateways'
+                    ? 'Local Gateways'
+                    : activeTab === 'discovery'
+                      ? 'Certificate Discovery & CT Surveillance'
+                      : activeTab === 'audit'
+                        ? 'Activity Logs'
+                        : activeTab === 'alerts'
+                          ? 'Security Alerts'
+                          : activeTab === 'settings'
+                            ? 'Tenant Settings'
+                            : activeTab === 'add-certificate'
+                              ? 'Add & Issue Certificate'
+                              : 'Certificates'
           }
-        subtitle={
+          subtitle={
             activeTab === 'dashboard'
-        ? 'Executive overview of cryptographic health, PQC readiness, and automated zero-outage SLA.'
-        : activeTab === 'compliance'
-        ? 'Cryptographic guardrails, 4-Eyes dual-approval queue, and continuous PCI-DSS / NIST audit reports.'
-        : activeTab === 'gateways'
-        ? 'Zero-trust agent daemons installed inside your VPC or on-prem networks.'
-        : activeTab === 'discovery'
-        ? 'Actively scan subnets, domains, and TLS endpoints to discover unmanaged certificates.'
-        : activeTab === 'audit'
-        ? 'Immutable audit trail of certificate lifecycle events and gateway operations.'
-        : activeTab === 'alerts'
-        ? 'Automated X.509 expiration alerts, SMTP notifications, and zero-trust policies.'
-        : activeTab === 'settings'
-        ? 'Configure team access, RBAC permissions, and organization security.'
-        : 'Manage, renew and monitor SSL certificates across your infrastructure.'
+              ? 'Executive overview of cryptographic health, PQC readiness, and automated zero-outage SLA.'
+              : activeTab === 'compliance'
+                ? 'Cryptographic guardrails, 4-Eyes dual-approval queue, and continuous PCI-DSS / NIST audit reports.'
+                : activeTab === 'gateways'
+                  ? 'Zero-trust agent daemons installed inside your VPC or on-prem networks.'
+                  : activeTab === 'discovery'
+                    ? 'Actively scan subnets, domains, and TLS endpoints to discover unmanaged certificates.'
+                    : activeTab === 'audit'
+                      ? 'Immutable audit trail of certificate lifecycle events and gateway operations.'
+                      : activeTab === 'alerts'
+                        ? 'Automated X.509 expiration alerts, SMTP notifications, and zero-trust policies.'
+                        : activeTab === 'settings'
+                          ? 'Configure team access, RBAC permissions, and organization security.'
+                          : activeTab === 'add-certificate'
+                            ? 'Issue fresh production certificates with automated DCV, or monitor live web host endpoints.'
+                            : 'Manage, renew and monitor SSL certificates across your infrastructure.'
           }
-        searchValue={searchTerm}
-        onSearchChange={setSearchTerm}
-        searchPlaceholder="Search certificates, domains, issuers..."
-        unreadNotifications={criticalCount > 0}
-        userInitials={
-          currentUser
-            ? `${currentUser.firstName?.[0] || 'U'}${currentUser.lastName?.[0] || ''}`.toUpperCase()
-            : 'GU'
-        }
-        actionButton={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={logout}
-              title="Sign Out"
-              className="px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors shadow-sm cursor-pointer"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
+          searchValue={searchTerm}
+          onSearchChange={setSearchTerm}
+          searchPlaceholder="Search certificates, domains, issuers..."
+          unreadNotifications={criticalCount > 0}
+          userInitials={
+            currentUser
+              ? `${currentUser.firstName?.[0] || 'U'}${currentUser.lastName?.[0] || ''}`.toUpperCase()
+              : 'GU'
+          }
+          actionButton={
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={logout}
+                title="Sign Out"
+                className="px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors shadow-sm cursor-pointer"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={onSyncDb}
-              disabled={isSyncing}
-              title="Refresh from PostgreSQL database"
-              className="px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 text-blue-600 ${isSyncing ? 'animate-spin' : ''}`}
-              />
-              <span className="hidden sm:inline">Sync DB</span>
-            </button>
+              <button
+                type="button"
+                onClick={onSyncDb}
+                disabled={isSyncing}
+                title="Refresh from PostgreSQL database"
+                className="px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 text-blue-600 ${isSyncing ? 'animate-spin' : ''}`}
+                />
+                <span className="hidden sm:inline">Sync DB</span>
+              </button>
 
-            {isPendingApproval ? (
-              <button
-                type="button"
-                disabled
-                title="Action locked: Workspace is under security review"
-                className="px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-80"
-              >
-                <Lock className="h-4 w-4 text-slate-400" />
-                <span>
-                  {activeTab === 'gateways' ? 'Enroll Gateway (Locked)' : 'Add Certificate (Locked)'}
-                </span>
-              </button>
-            ) : activeTab === 'gateways' ? (
-              <button
-                type="button"
-                onClick={onOpenEnrollGateway}
-                className="primary-gradient-btn px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20 cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Enroll Gateway</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onOpenAddCert}
-                className="primary-gradient-btn px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20 cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Add Certificate</span>
-              </button>
-            )}
-          </div>
-        }
+              {isPendingApproval ? (
+                <button
+                  type="button"
+                  disabled
+                  title="Action locked: Workspace is under security review"
+                  className="px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-80"
+                >
+                  <Lock className="h-4 w-4 text-slate-400" />
+                  <span>
+                    {activeTab === 'gateways' ? 'Enroll Gateway (Locked)' : 'Add Certificate (Locked)'}
+                  </span>
+                </button>
+              ) : activeTab === 'add-certificate' ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('certificates')}
+                  className="px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors shadow-sm cursor-pointer"
+                >
+                  <ArrowLeft className="h-4 w-4 text-slate-500" />
+                  <span>Back to Certificates</span>
+                </button>
+              ) : activeTab === 'gateways' ? (
+                can('enrollGateway') ? (
+                  <button
+                    type="button"
+                    onClick={onOpenEnrollGateway}
+                    className="primary-gradient-btn px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20 cursor-pointer"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Enroll Gateway</span>
+                  </button>
+                ) : null
+              ) : activeTab === 'dashboard' ? null : (
+                can('addCert') ? (
+                  <button
+                    type="button"
+                    onClick={onOpenAddCert}
+                    className="primary-gradient-btn px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20 cursor-pointer"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Add Certificate</span>
+                  </button>
+                ) : null
+              )}
+            </div>
+          }
         />
 
         {/* Global Database Error Banner */}

@@ -53,32 +53,50 @@ export class HttpClient {
       }
     }
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      credentials: 'include', // Ensures httpOnly refresh cookies are sent per security rules
-    });
+    const isIdempotent = !options.method || options.method === 'GET' || options.method === 'HEAD';
+    const maxRetries = isIdempotent ? 3 : 0;
+    let attempt = 0;
+    let response: Response;
 
-    if (response.status === 401 && this.onUnauthorized) {
-      this.onUnauthorized();
-    }
-
-    if (!response.ok) {
-      let errorBody: any = null;
-      try {
-        errorBody = await response.json();
-      } catch {
-        errorBody = await response.text().catch(() => null);
+      while (true) {
+        try {
+          response = await fetch(url, {
+            ...options,
+            headers,
+            credentials: 'include', // Ensures httpOnly refresh cookies are sent per security rules
+          });
+          break;
+        } catch (networkErr: any) {
+          attempt++;
+          if (attempt <= maxRetries) {
+            // Exponential backoff for server boot/restart: 400ms, 800ms, 1200ms
+            await new Promise((resolve) => setTimeout(resolve, attempt * 400));
+            continue;
+          }
+          throw networkErr;
+        }
       }
-      throw ApiClientError.fromResponse(response, errorBody);
-    }
 
-    if (response.status === 204) {
-      return undefined as unknown as T;
-    }
+      if (response.status === 401 && !endpoint.includes('auth/login') && !endpoint.includes('auth/register') && this.onUnauthorized) {
+        this.onUnauthorized();
+      }
 
-    return (await response.json()) as T;
-  }
+      if (!response.ok) {
+        let errorBody: any = null;
+        try {
+          errorBody = await response.json();
+        } catch {
+          errorBody = await response.text().catch(() => null);
+        }
+        throw ApiClientError.fromResponse(response, errorBody);
+      }
+
+      if (response.status === 204) {
+        return undefined as unknown as T;
+      }
+
+      return (await response.json()) as T;
+    }
 
   public get<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
     let url = endpoint;

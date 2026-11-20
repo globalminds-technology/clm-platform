@@ -49,6 +49,7 @@ export interface TenantSettings {
   defaultRenewalWindowDays?: number;
   slackWebhookUrl?: string | null;
   emailAlerts?: boolean;
+  logoUrl?: string | null;
   orgMetadata?: TenantOrganizationMetadata;
 }
 
@@ -101,6 +102,7 @@ export interface UpdateTenantSettingsRequest {
   defaultRenewalWindowDays?: number;
   emailAlerts?: boolean;
   slackWebhookUrl?: string | null;
+  logoUrl?: string | null;
   orgMetadata?: TenantOrganizationMetadata;
 }
 

@@ -21,6 +21,8 @@ import {
   type CloudAccount,
 } from '@clm/shared-types';
 import { StatusBadge, InfoBubble } from '@clm/ui';
+import { useAuth } from '../../../context/AuthContext';
+import { Role } from '@clm/shared-types';
 
 interface CertificateDetailProps {
   selectedCert: Certificate | null;
@@ -56,6 +58,8 @@ export const CertificateDetail: React.FC<CertificateDetailProps> = ({
       </div>
     );
   }
+
+  const { can, isRole } = useAuth();
 
   const isCritical =
     selectedCert.status === CertStatus.EXPIRED || selectedCert.daysRemaining <= 7;
@@ -101,7 +105,7 @@ export const CertificateDetail: React.FC<CertificateDetailProps> = ({
             <span>PEM Bundle</span>
           </button>
 
-          {selectedCert.trackingMode === CertificateTrackingMode.MONITORED ? (
+          {can('deploy') && selectedCert.trackingMode === CertificateTrackingMode.MONITORED && (
             <button
               type="button"
               onClick={() => onReprobe(selectedCert.id)}
@@ -116,7 +120,9 @@ export const CertificateDetail: React.FC<CertificateDetailProps> = ({
               )}
               <span>Re-Probe Live</span>
             </button>
-          ) : (
+          )}
+
+          {can('deploy') && selectedCert.trackingMode !== CertificateTrackingMode.MONITORED && (
             <>
               <button
                 type="button"
@@ -139,24 +145,28 @@ export const CertificateDetail: React.FC<CertificateDetailProps> = ({
             </>
           )}
 
-          <button
-            type="button"
-            onClick={() => onOpenRevoke(selectedCert)}
-            className="h-8 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold flex items-center gap-1.5 transition-colors border border-amber-200 cursor-pointer"
-            title="Revoke certificate with RFC 5280 compliance reason"
-          >
-            <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
-            <span>Revoke</span>
-          </button>
+          {can('revoke') && (
+            <button
+              type="button"
+              onClick={() => onOpenRevoke(selectedCert)}
+              className="h-8 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold flex items-center gap-1.5 transition-colors border border-amber-200 cursor-pointer"
+              title="Revoke certificate with RFC 5280 compliance reason"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
+              <span>Revoke</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => onDelete(selectedCert.id, selectedCert.domain)}
-            className="h-8 w-8 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition-colors cursor-pointer"
-            title="Delete certificate from inventory"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          {isRole(Role.SUPER_ADMIN, Role.TENANT_ADMIN) && (
+            <button
+              type="button"
+              onClick={() => onDelete(selectedCert.id, selectedCert.domain)}
+              className="h-8 w-8 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition-colors cursor-pointer"
+              title="Delete certificate from inventory"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -310,19 +320,18 @@ export const CertificateDetail: React.FC<CertificateDetailProps> = ({
             <div className="flex justify-between items-center">
               <span className="text-slate-400">Lifecycle Mode</span>
               <span
-                className={`font-bold ${
-                  selectedCert.trackingMode === CertificateTrackingMode.MONITORED
+                className={`font-bold ${selectedCert.trackingMode === CertificateTrackingMode.MONITORED
                     ? 'text-indigo-600'
                     : selectedCert.trackingMode === CertificateTrackingMode.MANAGED_CLOUD
-                    ? 'text-amber-600'
-                    : 'text-emerald-600'
-                }`}
+                      ? 'text-amber-600'
+                      : 'text-emerald-600'
+                  }`}
               >
                 {selectedCert.trackingMode === CertificateTrackingMode.MONITORED
                   ? 'Monitored Watchdog'
                   : selectedCert.trackingMode === CertificateTrackingMode.MANAGED_CLOUD
-                  ? 'AWS Cloud Sync'
-                  : 'Automated Gateway'}
+                    ? 'AWS Cloud Sync'
+                    : 'Automated Gateway'}
               </span>
             </div>
 
@@ -368,15 +377,20 @@ export const CertificateDetail: React.FC<CertificateDetailProps> = ({
             )}
             <span>Re-Probe Live Server (Sync Vercel / Origin TLS)</span>
           </button>
+        ): can('deploy') ? (
+        <button
+          type="button"
+          onClick={() => onRenew(selectedCert)}
+          className="primary-gradient-btn flex-1 py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-500/25 cursor-pointer"
+        >
+          <RefreshCw className="h-4 w-4" />
+          <span>Approve & Trigger Immediate Renewal</span>
+        </button>
         ) : (
-          <button
-            type="button"
-            onClick={() => onRenew(selectedCert)}
-            className="primary-gradient-btn flex-1 py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-500/25 cursor-pointer"
-          >
-            <RefreshCw className="h-4 w-4" />
-            <span>Approve & Trigger Immediate Renewal</span>
-          </button>
+        <div className="flex-1 py-3 rounded-2xl text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 flex items-center justify-center gap-2">
+          <Lock className="h-4 w-4 text-slate-400" />
+          <span>Read-Only Certificate View</span>
+        </div>
         )}
 
         <button

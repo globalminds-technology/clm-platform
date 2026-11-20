@@ -25,4 +25,20 @@ export class GatewaysEndpoint {
   getCommands(gatewayId: string): Promise<GatewayCommand[]> {
     return this.http.get<GatewayCommand[]>(`gateways/${gatewayId}/commands`);
   }
+
+  preflight(gatewayId: string, data: { targetType: string; domain?: string }): Promise<{
+    success: boolean;
+    gatewayOnline: boolean;
+    lastHeartbeatAt: string | null;
+    heartbeatAgeSeconds: number;
+    checks: { name: string; passed: boolean; details: string }[];
+  }> {
+    return this.http.post<{
+      success: boolean;
+      gatewayOnline: boolean;
+      lastHeartbeatAt: string | null;
+      heartbeatAgeSeconds: number;
+      checks: { name: string; passed: boolean; details: string }[];
+    }>(`gateways/${gatewayId}/preflight`, data);
+  }
 }

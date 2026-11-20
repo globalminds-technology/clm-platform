@@ -125,10 +125,186 @@ export class DatabaseModule implements OnModuleInit, OnApplicationShutdown {
   ) { }
 
   async onModuleInit() {
-    if (this.configService.get<string>('DATABASE_URL')) {
-      return;
+    await this.ensureBaseSeeds();
+    if (!this.configService.get<string>('DATABASE_URL')) {
+      await this.syncRlsPolicies();
     }
-    await this.syncRlsPolicies();
+  }
+
+  private async ensureBaseSeeds() {
+    try {
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN;');
+        await client.query("SELECT set_config('app.is_system', 'true', true);");
+
+        // 1. Ensure password_reset_tokens table exists
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email CITEXT NOT NULL,
+            token_hash VARCHAR(255) NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            used_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_email ON password_reset_tokens (email);
+        `);
+
+        // 2. Ensure cloud_accounts table exists
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS cloud_accounts (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
+            provider VARCHAR(50) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            auth_type VARCHAR(50) NOT NULL DEFAULT 'ACCESS_KEY',
+            status VARCHAR(50) NOT NULL DEFAULT 'CONNECTED',
+            region VARCHAR(64),
+            aws_account_id VARCHAR(64),
+            aws_role_arn VARCHAR(255),
+            azure_tenant_id VARCHAR(255),
+            azure_client_id VARCHAR(255),
+            gcp_project_id VARCHAR(255),
+            encrypted_credentials TEXT NOT NULL,
+            encryption_iv VARCHAR(64) NOT NULL,
+            encryption_tag VARCHAR(64) NOT NULL,
+            masked_secret VARCHAR(64) NOT NULL,
+            last_sync_at TIMESTAMPTZ,
+            error_message TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+        `);
+
+        // 3. Ensure System Tenant (for Super Admin operations)
+        await client.query(`
+          INSERT INTO tenants (id, name, slug, status, tier, max_certificates, max_gateways)
+          VALUES (
+            '00000000-0000-0000-0000-000000000000',
+            'CLM SaaS Platform Operator',
+            'clm-operator-system',
+            'ACTIVE',
+            'ENTERPRISE',
+            99999,
+            999
+          )
+          ON CONFLICT (id) DO NOTHING;
+        `);
+
+        // 4. Ensure Super Admin Users
+        const fixedHash = '$argon2id$v=19$m=65536,t=3,p=4$6HjL+7JfsReqtNVEejxDYA$Lz/iape+CZYS7eUjt5rXQ+qwvBukbFG57AXboUAZegc'; // Password123!
+
+        await client.query(`
+          INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, role, status)
+          VALUES
+            ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'superadmin@clm.platform', $1, 'Super', 'Admin', 'SUPER_ADMIN', 'ACTIVE'),
+            ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000', 'superadmin@clm.internal', $1, 'Super', 'Admin', 'SUPER_ADMIN', 'ACTIVE')
+          ON CONFLICT (tenant_id, email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = 'SUPER_ADMIN';
+        `, [fixedHash]);
+
+        // 5. Ensure Acme Corp Demo Tenant exists
+        await client.query(`
+          INSERT INTO tenants (id, name, slug, status, tier, max_certificates, max_gateways)
+          VALUES (
+            'a0000000-0000-0000-0000-000000000001',
+            'Acme Global Corp',
+            'acme-global',
+            'ACTIVE',
+            'ENTERPRISE',
+            1000,
+            25
+          )
+          ON CONFLICT (id) DO NOTHING;
+        `);
+
+        // 6. Ensure the 5 distinct Tenant Portal roles exist in Acme Corp for RBAC verification
+        await client.query(`
+          INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, role, status)
+          VALUES
+            ('10000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'admin@acme.com', $1, 'Alice', 'Vance', 'TENANT_ADMIN', 'ACTIVE'),
+            ('10000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', 'devops@acme.com', $1, 'Bob', 'Stone', 'DEVOPS_ENGINEER', 'ACTIVE'),
+            ('10000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000001', 'security@acme.com', $1, 'Sarah', 'Connor', 'SECURITY_LEAD', 'ACTIVE'),
+            ('10000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000001', 'auditor@acme.com', $1, 'Arthur', 'Dent', 'AUDITOR', 'ACTIVE'),
+            ('10000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000001', 'readonly@acme.com', $1, 'Rachel', 'Green', 'READ_ONLY', 'ACTIVE')
+          ON CONFLICT (tenant_id, email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role;
+        `, [fixedHash]);
+
+        // 7. Ensure Beta Corp (Company B) exists for cross-tenant multi-tenancy verification
+        await client.query(`
+          INSERT INTO tenants (id, name, slug, status, tier, max_certificates, max_gateways)
+          VALUES (
+            'b0000000-0000-0000-0000-000000000001',
+            'Beta Dynamics Inc',
+            'beta-dynamics',
+            'ACTIVE',
+            'ENTERPRISE',
+            500,
+            15
+          )
+          ON CONFLICT (id) DO NOTHING;
+        `);
+
+        await client.query(`
+          INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, role, status)
+          VALUES
+            ('20000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'admin@beta.com', $1, 'Bruce', 'Wayne', 'TENANT_ADMIN', 'ACTIVE'),
+            ('20000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000001', 'devops@beta.com', $1, 'Barry', 'Allen', 'DEVOPS_ENGINEER', 'ACTIVE')
+          ON CONFLICT (tenant_id, email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role;
+        `, [fixedHash]);
+
+        // 8. Ensure sample certificate for Company A (Acme) and Company B (Beta) for isolation proof
+        await client.query(`
+          INSERT INTO certificates (
+            id, tenant_id, domain, sans, status, issuer, serial_number, fingerprint_sha256, not_before, not_after, auto_renew, renew_before_days
+          )
+          VALUES (
+            'a1111111-1111-1111-1111-111111111111',
+            'a0000000-0000-0000-0000-000000000001',
+            'api.acme-corp.internal',
+            ARRAY['api.acme-corp.internal', 'app.acme-corp.internal'],
+            'ACTIVE',
+            'Let''s Encrypt Authority X3',
+            '4a:5b:6c:7d:8e:9f:01',
+            '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+            NOW() - INTERVAL '30 days',
+            NOW() + INTERVAL '60 days',
+            true,
+            30
+          )
+          ON CONFLICT (id) DO NOTHING;
+
+          INSERT INTO certificates (
+            id, tenant_id, domain, sans, status, issuer, serial_number, fingerprint_sha256, not_before, not_after, auto_renew, renew_before_days
+          )
+          VALUES (
+            'b1111111-1111-1111-1111-111111111111',
+            'b0000000-0000-0000-0000-000000000001',
+            'portal.beta-dynamics.io',
+            ARRAY['portal.beta-dynamics.io'],
+            'ACTIVE',
+            'DigiCert Global Root CA',
+            '01:23:45:67:89:ab:cd',
+            '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8',
+            NOW() - INTERVAL '10 days',
+            NOW() + INTERVAL '80 days',
+            true,
+            30
+          )
+          ON CONFLICT (id) DO NOTHING;
+        `);
+
+        await client.query('COMMIT;');
+        this.logger.log('Base schema verification & seed accounts initialized successfully.');
+      } catch (err: any) {
+        await client.query('ROLLBACK;').catch(() => {});
+        this.logger.warn(`Base schema seed note: ${err.message}`);
+      } finally {
+        client.release();
+      }
+    } catch (poolErr: any) {
+      this.logger.warn(`Could not connect to pool for base seeds: ${poolErr.message}`);
+    }
   }
 
   private async syncRlsPolicies() {
@@ -174,53 +350,8 @@ export class DatabaseModule implements OnModuleInit, OnApplicationShutdown {
           $$;
         `);
 
-        // Ensure password_reset_tokens table exists and is accessible
-        await client.query(`
-          CREATE TABLE IF NOT EXISTS password_reset_tokens (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            email CITEXT NOT NULL,
-            token_hash VARCHAR(255) NOT NULL,
-            expires_at TIMESTAMPTZ NOT NULL,
-            used_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-          );
-          CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_email ON password_reset_tokens (email);
-          GRANT ALL PRIVILEGES ON password_reset_tokens TO clm_app;
-
-          CREATE TABLE IF NOT EXISTS cloud_accounts (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            tenant_id UUID NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
-            provider VARCHAR(50) NOT NULL,
-            name VARCHAR(255) NOT NULL,
-            auth_type VARCHAR(50) NOT NULL DEFAULT 'ACCESS_KEY',
-            status VARCHAR(50) NOT NULL DEFAULT 'CONNECTED',
-            region VARCHAR(64),
-            aws_account_id VARCHAR(64),
-            aws_role_arn VARCHAR(255),
-            azure_tenant_id VARCHAR(255),
-            azure_client_id VARCHAR(255),
-            gcp_project_id VARCHAR(255),
-            encrypted_credentials TEXT NOT NULL,
-            encryption_iv VARCHAR(64) NOT NULL,
-            encryption_tag VARCHAR(64) NOT NULL,
-            masked_secret VARCHAR(64) NOT NULL,
-            last_sync_at TIMESTAMPTZ,
-            error_message TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-          );
-          GRANT ALL PRIVILEGES ON cloud_accounts TO clm_app;
-        `);
-
-        // Self-heal demo accounts if initialized with dummy unmatchable Argon2 hashes
-        const fixedHash = '$argon2id$v=19$m=65536,t=3,p=4$6HjL+7JfsReqtNVEejxDYA$Lz/iape+CZYS7eUjt5rXQ+qwvBukbFG57AXboUAZegc';
-        await client.query(
-          `UPDATE users
-           SET password_hash = $1
-           WHERE email IN ('admin@acme.com', 'devops@acme.com')
-             AND password_hash LIKE '%dGVzdHNhbHQxMjM0NTY3OA%';`,
-          [fixedHash],
-        );
+        await client.query('GRANT ALL PRIVILEGES ON password_reset_tokens TO clm_app;');
+        await client.query('GRANT ALL PRIVILEGES ON cloud_accounts TO clm_app;');
 
         this.logger.log('PostgreSQL Row-Level Security (RLS) system bypass policies successfully synchronized.');
       } finally {

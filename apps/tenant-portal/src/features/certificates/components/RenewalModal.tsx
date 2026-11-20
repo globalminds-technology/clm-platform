@@ -46,6 +46,7 @@ export const RenewalModal: React.FC<RenewalModalProps> = ({
   useEffect(() => {
     if (isOpen && cert) {
       loadRenewalContext(cert);
+      setSelectedCaIntegrationId(cert.caIntegrationId || '');
     }
   }, [isOpen, cert]);
 

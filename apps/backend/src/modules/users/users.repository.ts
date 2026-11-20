@@ -13,14 +13,20 @@ export class UsersRepository {
 
   async findAll(tenantId: string): Promise<User[]> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
-      const res = await client.query('SELECT * FROM users ORDER BY created_at DESC;');
+      const res = await client.query(
+        'SELECT * FROM users WHERE tenant_id = $1 ORDER BY created_at DESC;',
+        [tenantId],
+      );
       return res.rows.map(r => this.mapRowToUser(r));
     });
   }
 
   async findById(tenantId: string, id: string): Promise<User | null> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
-      const res = await client.query('SELECT * FROM users WHERE id = $1;', [id]);
+      const res = await client.query(
+        'SELECT * FROM users WHERE id = $1 AND tenant_id = $2;',
+        [id, tenantId],
+      );
       if (res.rows.length === 0) return null;
       return this.mapRowToUser(res.rows[0]);
     });
@@ -28,7 +34,10 @@ export class UsersRepository {
 
   async findByEmail(tenantId: string, email: string): Promise<UserEntityWithPassword | null> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
-      const res = await client.query('SELECT * FROM users WHERE email = $1;', [email.toLowerCase().trim()]);
+      const res = await client.query(
+        'SELECT * FROM users WHERE email = $1 AND tenant_id = $2;',
+        [email.toLowerCase().trim(), tenantId],
+      );
       if (res.rows.length === 0) return null;
       return this.mapRowToUserWithPassword(res.rows[0]);
     });
@@ -71,8 +80,8 @@ export class UsersRepository {
   async updateRole(tenantId: string, id: string, role: Role): Promise<User> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
       const res = await client.query(
-        'UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2 RETURNING *;',
-        [role, id],
+        'UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3 RETURNING *;',
+        [role, id, tenantId],
       );
       if (res.rows.length === 0) throw new Error('User not found');
       return this.mapRowToUser(res.rows[0]);
@@ -82,8 +91,8 @@ export class UsersRepository {
   async updateStatus(tenantId: string, id: string, status: UserStatus): Promise<User> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
       const res = await client.query(
-        'UPDATE users SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *;',
-        [status, id],
+        'UPDATE users SET status = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3 RETURNING *;',
+        [status, id, tenantId],
       );
       if (res.rows.length === 0) throw new Error('User not found');
       return this.mapRowToUser(res.rows[0]);
@@ -92,7 +101,10 @@ export class UsersRepository {
 
   async updateLastLogin(tenantId: string, id: string): Promise<void> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
-      await client.query('UPDATE users SET last_login_at = NOW() WHERE id = $1;', [id]);
+      await client.query(
+        'UPDATE users SET last_login_at = NOW() WHERE id = $1 AND tenant_id = $2;',
+        [id, tenantId],
+      );
     });
   }
 
@@ -104,7 +116,6 @@ export class UsersRepository {
       );
     });
   }
-
 
   private mapRowToUser(row: any): User {
     return {

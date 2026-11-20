@@ -4,7 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppLayout, type AppTab } from './components/layout/AppLayout';
 import { PublicHome, PublicAuth } from './features/public';
 import { DashboardView } from './features/dashboard';
-import { CertificatesView, useCertificates } from './features/certificates';
+import { CertificatesView, AddCertificatePage, useCertificates } from './features/certificates';
 import { DiscoveryView } from './features/discovery';
 import { GatewaysView, useGateways } from './features/gateways';
 import { ComplianceView } from './features/compliance';
@@ -16,10 +16,25 @@ import { api } from './config/api';
 import { type AuditLog } from '@clm/shared-types';
 
 function AuthenticatedApp() {
-  const { currentUser, currentTenant, setCurrentTenant } = useAuth();
+  const { currentUser, currentTenant, setCurrentTenant, can } = useAuth();
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [activityLogs, setActivityLogs] = useState<AuditLog[]>([]);
+
+  // Guard against forbidden tabs when role switches or page loads
+  useEffect(() => {
+    const isForbidden =
+      (activeTab === 'settings' && !can('manageSettings')) ||
+      (activeTab === 'integrations' && !can('manageSettings')) ||
+      (activeTab === 'audit' && !can('viewAudit')) ||
+      (activeTab === 'compliance' && !can('viewCompliance')) ||
+      (activeTab === 'gateways' && !can('viewGateways')) ||
+      (activeTab === 'discovery' && !can('viewDiscovery'));
+
+    if (isForbidden) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, can]);
 
   // Certificates Feature Hook
   const certsHook = useCertificates();
@@ -81,7 +96,7 @@ function AuthenticatedApp() {
       onRetryConnection={syncAllData}
       onSyncDb={handleManualSync}
       isSyncing={certsHook.isLoading}
-      onOpenAddCert={() => setIsAddModalOpen(true)}
+      onOpenAddCert={() => setActiveTab('add-certificate')}
       onOpenEnrollGateway={gatewaysHook.handleOpenEnrollModal}
     >
       {activeTab === 'dashboard' && (
@@ -89,13 +104,28 @@ function AuthenticatedApp() {
           certs={certsHook.certs}
           gateways={gatewaysHook.gateways}
           currentTenant={currentTenant}
-          onOpenAddCert={() => setIsAddModalOpen(true)}
+          onOpenAddCert={() => setActiveTab('add-certificate')}
           onNavigateToCerts={(filter) => {
             if (filter) certsHook.setStatusFilter(filter);
             setActiveTab('certificates');
           }}
           onNavigateToDiscovery={() => setActiveTab('discovery')}
           onNavigateToGateways={() => setActiveTab('gateways')}
+        />
+      )}
+
+      {activeTab === 'add-certificate' && (
+        <AddCertificatePage
+          onBack={() => setActiveTab('certificates')}
+          onCreated={(newCert) => {
+            certsHook.setCerts((prev) => [newCert, ...prev]);
+            certsHook.setSelectedCertId(newCert.id);
+            setActiveTab('certificates');
+          }}
+          gateways={gatewaysHook.gateways}
+          cloudAccounts={settingsHook.cloudAccounts}
+          caIntegrations={settingsHook.caIntegrations}
+          currentTenant={currentTenant}
         />
       )}
 

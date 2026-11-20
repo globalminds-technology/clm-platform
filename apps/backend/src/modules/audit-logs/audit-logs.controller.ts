@@ -12,10 +12,10 @@ import { AuditLogsService } from './audit-logs.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('audit-logs')
 export class AuditLogsController {
-  constructor(private readonly auditLogsService: AuditLogsService) {}
+  constructor(private readonly auditLogsService: AuditLogsService) { }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.DEVOPS_ENGINEER, Role.AUDITOR)
+  @Roles(Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.SECURITY_LEAD, Role.AUDITOR)
   @ApiOperation({ summary: 'Retrieve immutable chronological audit trail for the tenant' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })

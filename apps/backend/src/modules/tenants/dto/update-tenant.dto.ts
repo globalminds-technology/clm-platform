@@ -46,6 +46,11 @@ export class UpdateTenantSettingsDto {
   @IsOptional()
   emailAlerts?: boolean;
 
+  @ApiPropertyOptional({ example: 'data:image/png;base64,...' })
+  @IsString()
+  @IsOptional()
+  logoUrl?: string | null;
+
   @ApiPropertyOptional({ type: () => UpdateTenantOrgMetadataDto })
   @ValidateNested()
   @Type(() => UpdateTenantOrgMetadataDto)

@@ -21,6 +21,7 @@ export enum ValidationMethod {
   HTTP_01 = 'HTTP_01',
   TLS_ALPN_01 = 'TLS_ALPN_01',
   MANUAL = 'MANUAL',
+  EMAIL = 'EMAIL',
 }
 
 export enum CertificateTrackingMode {

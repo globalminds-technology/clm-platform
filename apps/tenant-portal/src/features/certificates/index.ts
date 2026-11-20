@@ -2,6 +2,7 @@ export * from './components/CertificatesView';
 export * from './components/CertificateTable';
 export * from './components/CertificateDetail';
 export * from './components/AddCertModal';
+export * from './components/AddCertificatePage';
 export * from './components/RenewalModal';
 export * from './components/RevokeModal';
 export * from './components/DeployModal';

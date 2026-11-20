@@ -206,6 +206,11 @@ export const CertificatesView: React.FC<CertificatesViewProps> = ({
         cert={selectedCert}
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
+        caIntegrations={caIntegrations}
+        gateways={gateways}
+        onCertUpdated={(updated) => {
+          setCerts((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        }}
       />
 
       {/* Add Certificate Modal */}
@@ -255,12 +260,12 @@ export const CertificatesView: React.FC<CertificatesViewProps> = ({
         gateways={gateways}
         isOpen={!!certToDeploy}
         onClose={() => setCertToDeploy(null)}
-        onDeploy={async (certId, gatewayId) => {
-          await api.certificates.deploy(certId, gatewayId);
+          onDeploy = { async(certId, gatewayId, targetType) => {
+        await api.certificates.deploy(certId, gatewayId, targetType);
           setCerts((prev) =>
-            prev.map((c) => (c.id === certId ? { ...c, gatewayId } : c))
-          );
-          setCertToDeploy(null);
+            prev.map((c) => (c.id === certId ? {...c, gatewayId} : c))
+      );
+      setCertToDeploy(null);
         }}
       />
 

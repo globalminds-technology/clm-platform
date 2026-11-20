@@ -11,9 +11,11 @@ import {
   Settings,
   RefreshCw,
   Check,
+  Lock,
 } from 'lucide-react';
 import { CertStatus, type Certificate } from '@clm/shared-types';
 import { toast } from '@clm/ui';
+import { useAuth } from '../../../context/AuthContext';
 import { api } from '../../../config/api';
 
 interface AlertsViewProps {
@@ -25,6 +27,10 @@ export const AlertsView: React.FC<AlertsViewProps> = ({
   certs,
   onRenewCert,
 }) => {
+  const { can } = useAuth();
+  const canManagePolicy = can('managePolicy');
+  const canRenew = can('deploy');
+
   const [alertRecipientEmail, setAlertRecipientEmail] = useState('admin@yourcompany.com');
   const [slackWebhookUrl, setSlackWebhookUrl] = useState('');
   const [alertThresholdDays, setAlertThresholdDays] = useState(7);
@@ -98,19 +104,21 @@ export const AlertsView: React.FC<AlertsViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 self-stretch md:self-auto">
-          <button
-            type="button"
-            onClick={handleSendTestAlert}
-            disabled={isSendingTestAlert}
-            className="flex-1 md:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-          >
-            {isSendingTestAlert ? (
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Send className="h-3.5 w-3.5" />
-            )}
-            <span>Send Test Alert via SMTP</span>
-          </button>
+          {canManagePolicy && (
+            <button
+              type="button"
+              onClick={handleSendTestAlert}
+              disabled={isSendingTestAlert}
+              className="flex-1 md:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {isSendingTestAlert ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
+              <span>Send Test Alert via SMTP</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -201,9 +209,8 @@ export const AlertsView: React.FC<AlertsViewProps> = ({
                 return (
                   <div
                     key={cert.id}
-                    className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
-                      isCritical ? 'bg-rose-50/40 border-rose-200' : 'bg-amber-50/30 border-amber-200'
-                    }`}
+                    className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-3 ${isCritical ? 'bg-rose-50/40 border-rose-200' : 'bg-amber-50/30 border-amber-200'
+                      }`}
                   >
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2">
@@ -211,9 +218,8 @@ export const AlertsView: React.FC<AlertsViewProps> = ({
                           {cert.domain}
                         </span>
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                            isCritical ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
-                          }`}
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${isCritical ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
+                            }`}
                         >
                           {cert.daysRemaining <= 0 ? 'EXPIRED' : `${cert.daysRemaining}d Left`}
                         </span>
@@ -224,14 +230,16 @@ export const AlertsView: React.FC<AlertsViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => onRenewCert(cert)}
-                        className="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
-                      >
-                        <RefreshCw className="h-3 w-3" />
-                        <span>Renew</span>
-                      </button>
+                      {canRenew && (
+                        <button
+                          type="button"
+                          onClick={() => onRenewCert(cert)}
+                          className="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          <span>Renew</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -242,11 +250,19 @@ export const AlertsView: React.FC<AlertsViewProps> = ({
 
         {/* Notification Policy Configuration (5 cols) */}
         <div className="lg:col-span-5 bg-white rounded-[28px] soft-card p-6 border border-slate-100 space-y-4">
-          <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <Settings className="h-4 w-4 text-blue-600" />
-            <h4 className="text-xs font-extrabold text-[#0F172A] uppercase tracking-wider">
-              Notification Channels &amp; Policy
-            </h4>
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Settings className="h-4 w-4 text-blue-600" />
+              <h4 className="text-xs font-extrabold text-[#0F172A] uppercase tracking-wider">
+                Notification Channels &amp; Policy
+              </h4>
+            </div>
+            {!canManagePolicy && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200 flex items-center gap-1">
+                <Lock className="h-3 w-3" />
+                <span>Read-Only</span>
+              </span>
+            )}
           </div>
 
           <div className="space-y-4 text-xs">
@@ -260,12 +276,18 @@ export const AlertsView: React.FC<AlertsViewProps> = ({
                   type="email"
                   value={alertRecipientEmail}
                   onChange={(e) => setAlertRecipientEmail(e.target.value)}
+                  disabled={!canManagePolicy}
                   placeholder="admin@yourcompany.com"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  className={`w-full pl-9 pr-3 py-2 rounded-xl border font-mono text-xs ${!canManagePolicy
+                    ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
+                    : 'bg-slate-50 border-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-hidden'
+                    }`}
                 />
               </div>
               <p className="text-[10px] text-slate-400 mt-1">
-                Dispatches critical X.509 expiry alerts using the configured Gmail SMTP credentials.
+                {canManagePolicy
+                  ? 'Dispatches critical X.509 expiry alerts using the configured Gmail SMTP credentials.'
+                  : 'Centrally configured by Tenant Administrator / Security Lead.'}
               </p>
             </div>
 
@@ -282,12 +304,13 @@ export const AlertsView: React.FC<AlertsViewProps> = ({
                   <button
                     key={opt.days}
                     type="button"
+                    disabled={!canManagePolicy}
                     onClick={() => setAlertThresholdDays(opt.days)}
-                    className={`py-2 px-3 rounded-xl font-bold text-xs border text-center transition-all cursor-pointer ${
-                      alertThresholdDays === opt.days
+                    className={`py-2 px-3 rounded-xl font-bold text-xs border text-center transition-all ${!canManagePolicy ? 'cursor-not-allowed opacity-70 ' : 'cursor-pointer '
+                      }${alertThresholdDays === opt.days
                         ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-xs'
                         : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
+                      }`}
                   >
                     {opt.label}
                   </button>
@@ -303,8 +326,12 @@ export const AlertsView: React.FC<AlertsViewProps> = ({
                 type="url"
                 value={slackWebhookUrl}
                 onChange={(e) => setSlackWebhookUrl(e.target.value)}
+                disabled={!canManagePolicy}
                 placeholder="https://hooks.slack.com/services/..."
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                className={`w-full px-3 py-2 rounded-xl border font-mono text-xs ${!canManagePolicy
+                  ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
+                  : 'bg-slate-50 border-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-hidden'
+                  }`}
               />
               <p className="text-[10px] text-slate-400 mt-1">
                 Optional webhook endpoint for real-time channel incident alerts.
@@ -323,22 +350,29 @@ export const AlertsView: React.FC<AlertsViewProps> = ({
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={handleSaveAlertConfig}
-              disabled={isSavingAlertConfig}
-              className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-slate-900 hover:bg-slate-800 transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              {isSavingAlertConfig ? (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Check className="h-3.5 w-3.5" />
-              )}
-              <span>Save Notification Policy</span>
-            </button>
+            {canManagePolicy ? (
+              <button
+                type="button"
+                onClick={handleSaveAlertConfig}
+                disabled={isSavingAlertConfig}
+                className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-slate-900 hover:bg-slate-800 transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isSavingAlertConfig ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
+                <span>Save Notification Policy</span>
+              </button>
+            ) : (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500 font-medium flex items-center justify-center gap-2">
+                <Lock className="h-3.5 w-3.5 text-slate-400" />
+                <span>Policy configuration is restricted to Tenant Admin / Security Lead</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 };

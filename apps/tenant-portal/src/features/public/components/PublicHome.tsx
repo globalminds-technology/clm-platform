@@ -17,12 +17,11 @@ import ShapeGrid from '../../../components/ShapeGrid/ShapeGrid';
 
 interface PublicHomeProps {
   onNavigateToAuth: (mode?: 'signin' | 'signup', tier?: SubscriptionTier) => void;
-  onLoadDemoSandbox: () => void;
+  onLoadDemoSandbox?: () => void;
 }
 
 export const PublicHome: React.FC<PublicHomeProps> = ({
   onNavigateToAuth,
-  onLoadDemoSandbox,
 }) => {
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans selection:bg-blue-500/20 selection:text-blue-600 flex flex-col relative pt-[73px]">
@@ -381,11 +380,11 @@ export const PublicHome: React.FC<PublicHomeProps> = ({
             <div className="pt-2">
               <button
                 type="button"
-                onClick={onLoadDemoSandbox}
+                onClick={() => onNavigateToAuth('signin')}
                 className="px-4 py-2.5 rounded-xl bg-white border border-slate-300 text-xs font-bold text-slate-800 hover:bg-slate-50 shadow-sm transition-colors flex items-center gap-2 cursor-pointer"
               >
                 <Terminal className="h-4 w-4 text-blue-600" />
-                <span>Inspect Gateway Telemetry in Sandbox</span>
+                <span>Sign In to Access Gateways</span>
               </button>
             </div>
           </div>

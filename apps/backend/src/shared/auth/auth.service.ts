@@ -20,6 +20,7 @@ export interface AuthTokens {
 export interface AuthResult {
   tokens: AuthTokens;
   user: User;
+  tenant?: any;
 }
 
 @Injectable()

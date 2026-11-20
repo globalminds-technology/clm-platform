@@ -4,6 +4,7 @@ import {
   Cloud,
   Radio,
   Search,
+  Server,
 } from 'lucide-react';
 import {
   CertStatus,
@@ -163,6 +164,11 @@ export const CertificateTable: React.FC<CertificateTableProps> = ({
                       ) : (
                         <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
                           <Shield className="h-2.5 w-2.5" /> Managed
+                        </span>
+                      )}
+                      {(cert.gatewayId || cert.trackingMode === CertificateTrackingMode.MANAGED_GATEWAY) && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200 shrink-0">
+                          <Server className="h-2.5 w-2.5" /> Gateway
                         </span>
                       )}
                       <span className="truncate">{cert.issuer}</span>

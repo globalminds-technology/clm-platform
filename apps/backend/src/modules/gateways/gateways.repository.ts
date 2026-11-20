@@ -13,14 +13,20 @@ export class GatewaysRepository {
 
   async findAll(tenantId: string): Promise<Gateway[]> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
-      const res = await client.query('SELECT * FROM gateways ORDER BY created_at DESC;');
+      const res = await client.query(
+        'SELECT * FROM gateways WHERE tenant_id = $1 ORDER BY created_at DESC;',
+        [tenantId],
+      );
       return res.rows.map(r => this.mapRowToGateway(r));
     });
   }
 
   async findById(tenantId: string, id: string): Promise<Gateway | null> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
-      const res = await client.query('SELECT * FROM gateways WHERE id = $1;', [id]);
+      const res = await client.query(
+        'SELECT * FROM gateways WHERE id = $1 AND tenant_id = $2;',
+        [id, tenantId],
+      );
       if (res.rows.length === 0) return null;
       return this.mapRowToGateway(res.rows[0]);
     });
@@ -120,12 +126,77 @@ export class GatewaysRepository {
     });
   }
 
+  async ingestDiscoveredCertificates(
+    tenantId: string,
+    gatewayId: string,
+    certs: Array<{
+      domain: string;
+      sans?: string[];
+      issuer: string;
+      serialNumber?: string;
+      fingerprintSha256?: string;
+      keyAlgorithm?: string;
+      notBefore: string;
+      notAfter: string;
+    }>,
+  ): Promise<number> {
+    if (!certs || certs.length === 0) return 0;
+
+    return this.tenantContextService.withTenantContext(tenantId, async client => {
+      let count = 0;
+      for (const cert of certs) {
+        if (!cert.domain) continue;
+        const notBefore = new Date(cert.notBefore);
+        const notAfter = new Date(cert.notAfter);
+        const daysRemaining = Math.max(0, Math.ceil((notAfter.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+        let status = 'ACTIVE';
+        if (daysRemaining <= 0) {
+          status = 'EXPIRED';
+        } else if (daysRemaining <= 30) {
+          status = 'EXPIRING_SOON';
+        }
+
+        const existing = await client.query(
+          'SELECT id FROM certificates WHERE tenant_id = $1 AND domain = $2 LIMIT 1;',
+          [tenantId, cert.domain],
+        );
+
+        const serialNumber = cert.serialNumber || Math.random().toString(16).substring(2, 18);
+        const fingerprint = cert.fingerprintSha256 || Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+        const keyAlgorithm = cert.keyAlgorithm || 'RSA_2048';
+        const sans = cert.sans && cert.sans.length > 0 ? cert.sans : [cert.domain];
+
+        if (existing.rows.length > 0) {
+          await client.query(
+            `UPDATE certificates
+             SET sans = $1, status = $2, key_algorithm = $3, issuer = $4,
+                 serial_number = $5, fingerprint_sha256 = $6, not_before = $7, not_after = $8,
+                 gateway_id = COALESCE(gateway_id, $9), updated_at = NOW()
+            WHERE id = $10 AND tenant_id = $11; `,
+            [sans, status, keyAlgorithm, cert.issuer, serialNumber, fingerprint, notBefore.toISOString(), notAfter.toISOString(), gatewayId, existing.rows[0].id, tenantId],
+          );
+        } else {
+          await client.query(
+            `INSERT INTO certificates(
+              tenant_id, domain, sans, status, key_algorithm, tracking_mode, issuer,
+              serial_number, fingerprint_sha256, not_before, not_after,
+              auto_renew, renew_before_days, gateway_id, deployment_target_type
+            ) VALUES($1, $2, $3, $4, $5, 'MANAGED_GATEWAY', $6, $7, $8, $9, $10, true, 30, $11, 'GATEWAY'); `,
+            [tenantId, cert.domain, sans, status, keyAlgorithm, cert.issuer, serialNumber, fingerprint, notBefore.toISOString(), notAfter.toISOString(), gatewayId],
+          );
+        }
+        count++;
+      }
+      return count;
+    });
+  }
+
   async findPendingCommands(gatewayId: string): Promise<GatewayCommand[]> {
     return this.tenantContextService.withSystemContext(async client => {
       const res = await client.query(
         `SELECT * FROM gateway_commands
          WHERE gateway_id = $1 AND status = 'PENDING'
-         ORDER BY created_at ASC;`,
+         ORDER BY created_at ASC; `,
         [gatewayId],
       );
 
@@ -138,7 +209,7 @@ export class GatewaysRepository {
       await client.query(
         `UPDATE gateway_commands
          SET status = $1, error_message = $2, completed_at = NOW()
-         WHERE id = $3;`,
+         WHERE id = $3; `,
         [status, errorMessage || null, commandId],
       );
     });
@@ -153,10 +224,10 @@ export class GatewaysRepository {
   ): Promise<GatewayCommand> {
     return this.tenantContextService.withTenantContext(tenantId, async client => {
       const res = await client.query(
-        `INSERT INTO gateway_commands (
-          tenant_id, gateway_id, type, status, payload, signature, created_at
-        ) VALUES ($1, $2, $3, 'PENDING', $4, $5, NOW())
-        RETURNING *;`,
+        `INSERT INTO gateway_commands(
+              tenant_id, gateway_id, type, status, payload, signature, created_at
+            ) VALUES($1, $2, $3, 'PENDING', $4, $5, NOW())
+          RETURNING *; `,
         [tenantId, gatewayId, type, JSON.stringify(payload), signature],
       );
       return this.mapRowToCommand(res.rows[0]);

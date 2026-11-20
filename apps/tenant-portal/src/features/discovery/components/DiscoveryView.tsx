@@ -27,6 +27,7 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
     handleTriggerDiscoveryScan,
     handleImportDiscoveredCert,
     handleCreateJob,
+    handleDeleteJob,
   } = useDiscovery(onCertImported);
 
   return (
@@ -119,6 +120,7 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
       jobs={discoveryJobs}
       isScanning={isScanningDiscovery}
       onTriggerScan={(jobId) => handleTriggerDiscoveryScan(jobId)}
+      onDeleteJob={handleDeleteJob}
     />
   )
 }

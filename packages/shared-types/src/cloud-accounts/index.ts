@@ -2,6 +2,7 @@ export enum CloudProvider {
   AWS = 'AWS',
   AZURE = 'AZURE',
   GCP = 'GCP',
+  CLOUDFLARE = 'CLOUDFLARE',
 }
 
 export enum CloudAccountAuthType {
@@ -9,6 +10,7 @@ export enum CloudAccountAuthType {
   IAM_ROLE = 'IAM_ROLE',
   SERVICE_PRINCIPAL = 'SERVICE_PRINCIPAL',
   SERVICE_ACCOUNT = 'SERVICE_ACCOUNT',
+  API_TOKEN = 'API_TOKEN',
 }
 
 export enum CloudAccountStatus {
@@ -30,6 +32,7 @@ export interface CloudAccount {
   azureTenantId?: string;
   azureClientId?: string;
   gcpProjectId?: string;
+  cloudflareZoneId?: string;
   maskedSecret: string;
   lastSyncAt?: string | null;
   errorMessage?: string | null;
@@ -50,6 +53,8 @@ export interface CreateCloudAccountRequest {
   azureClientSecret?: string;
   gcpProjectId?: string;
   gcpServiceAccountJson?: string;
+  cloudflareApiToken?: string;
+  cloudflareZoneId?: string;
 }
 
 export interface TestCloudAccountResponse {
